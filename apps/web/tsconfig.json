@@ -1,0 +1,26 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"jsx": "react-jsx",
+		"allowJs": true,
+		"noEmit": true,
+		"paths": {
+			"@/*": ["./*"],
+			"@arnold/core": ["../../packages/core/src/index.ts"]
+		},
+		"plugins": [{ "name": "next" }]
+	},
+	"include": [
+		"next-env.d.ts",
+		"app/**/*.ts",
+		"app/**/*.tsx",
+		"lib/**/*.ts",
+		"lib/**/*.tsx",
+		"components/**/*.ts",
+		"components/**/*.tsx",
+		"hooks/**/*.ts",
+		"hooks/**/*.tsx",
+		".next/types/**/*.ts"
+	],
+	"exclude": ["node_modules"]
+}

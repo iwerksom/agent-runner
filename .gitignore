@@ -1,0 +1,23 @@
+node_modules/
+.next/
+dist/
+*.tsbuildinfo
+
+# Local env
+.env
+.env.local
+
+# Phase 0 store and artifacts (SQLite + local artifact dir)
+*.db
+*.db-journal
+*.sqlite
+packages/core/prisma/*.db
+.arnold/
+
+# Agent workspaces (git worktrees leased per run)
+workspaces/
+
+.DS_Store
+
+# Generated verification aid (regenerate with scripts/make-prisma-typestub.mjs)
+packages/core/types/prisma-client-stub.d.ts

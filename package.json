@@ -1,0 +1,35 @@
+{
+	"name": "arnold",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Arnold: Agent Runner, Notary, Orchestrator, Ledger, Dispatcher. A console for running Claude agents.",
+	"type": "module",
+	"engines": {
+		"node": ">=22.22.0"
+	},
+	"scripts": {
+		"dev": "pnpm --filter @arnold/web dev",
+		"build": "pnpm check:rsc && pnpm --filter @arnold/web build",
+		"typecheck": "pnpm -r typecheck",
+		"db:generate": "pnpm --filter @arnold/core db:generate",
+		"db:push": "pnpm --filter @arnold/core db:push",
+		"db:studio": "pnpm --filter @arnold/core db:studio",
+		"seed": "pnpm --filter @arnold/core seed",
+		"setup": "pnpm install && pnpm db:generate && pnpm db:push && pnpm seed",
+		"env:check": "node scripts/with-env.mjs --require=DATABASE_URL,ANTHROPIC_API_KEY node -e \"console.log('env ok: DATABASE_URL and ANTHROPIC_API_KEY are set')\"",
+		"check:rsc": "node scripts/check-rsc-boundaries.mjs",
+		"smoke": "tsx scripts/smoke.ts",
+		"typecheck:offline": "node scripts/make-prisma-typestub.mjs && tsc -p tsconfig.verify.json --noEmit",
+		"format": "prettier --write .",
+		"format:check": "prettier --check ."
+	},
+	"dependencies": {
+		"@arnold/core": "workspace:*"
+	},
+	"devDependencies": {
+		"prettier": "^3.3.3",
+		"tsx": "^4.19.2",
+		"typescript": "^5.9.2"
+	},
+	"packageManager": "pnpm@9.15.0"
+}

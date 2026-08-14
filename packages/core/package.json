@@ -1,0 +1,28 @@
+{
+	"name": "@arnold/core",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"db:generate": "node ../../scripts/with-env.mjs prisma generate",
+		"db:push": "node ../../scripts/with-env.mjs --require=DATABASE_URL prisma db push",
+		"db:studio": "node ../../scripts/with-env.mjs --require=DATABASE_URL prisma studio",
+		"seed": "node ../../scripts/with-env.mjs --require=DATABASE_URL tsx ../../scripts/seed.ts"
+	},
+	"dependencies": {
+		"@anthropic-ai/claude-agent-sdk": "0.3.228",
+		"@prisma/client": "^6.19.3",
+		"fast-glob": "^3.3.2",
+		"zod": "^3.24.2"
+	},
+	"devDependencies": {
+		"@types/node": "20.19.39",
+		"prisma": "^6.19.3",
+		"tsx": "^4.19.2",
+		"typescript": "^5.9.2"
+	}
+}

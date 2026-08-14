@@ -1,0 +1,249 @@
+// Purpose: Arnold's store. Phase 0 runs on SQLite; Phase 1 swaps the datasource
+// for Postgres without reshaping the model.
+//
+// Two SQLite accommodations to undo at that point, both marked JSON-TEXT below:
+//   - SQLite has no enum support, so status/scope/mode columns are String and
+//     the union types live in packages/core/src/agents.ts.
+//   - SQLite has no array or json scalar, so structured columns are String
+//     holding JSON. Read and write them through the helpers in src/json.ts,
+//     never with JSON.parse at the call site.
+//
+// Everything else, including the run tree and the per-scope ledger, is the
+// Postgres shape already.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// A target repository. Multi-repo from day one even though Phase 0 seeds one.
+model Repo {
+  id            String  @id @default(cuid())
+  slug          String  @unique // "diamond-frontend"
+  name          String
+  remoteUrl     String
+  /// Local checkout used as the clone source, so Phase 0 needs no network.
+  localPath     String?
+  defaultBranch String  @default("main")
+  claudeDir     String  @default(".claude")
+
+  agents     AgentRepo[]
+  runs       Run[]
+  workspaces Workspace[]
+
+  createdAt DateTime @default(now())
+}
+
+model Agent {
+  id          String @id // manifest id, e.g. "work-order-scoper"
+  name        String
+  description String
+
+  /// AgentKind: command | subagent | harness | native
+  kind             String
+  /// AgentState: active | unregistered | orphaned | disabled
+  state            String @default("active")
+  /// direct | child
+  invocable        String @default("direct")
+  /// WriteScope: read-only .. external-writes
+  writeScope       String
+  /// ExecutionMode: unattended | needs-human | needs-local-session
+  execution        String
+  /// ScopeEnforcement: prompt-only | manifest | credential
+  scopeEnforcement String @default("prompt-only")
+
+  /// JSON-TEXT PromptSource
+  promptSource    String
+  /// JSON-TEXT MainBookkeeping, or null
+  mainBookkeeping String?
+  /// JSON-TEXT full AgentManifest snapshot taken at sync time
+  manifest        String
+
+  repos     AgentRepo[]
+  runs      Run[]
+  schedules Schedule[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// An agent applies to one or more repos; enablement is per pair.
+model AgentRepo {
+  agentId String
+  repoId  String
+  enabled Boolean @default(true)
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  repo  Repo  @relation(fields: [repoId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, repoId])
+}
+
+/// Phase 0 has no auth, so this table exists but holds a single seeded operator.
+model User {
+  id    String @id @default(cuid())
+  email String @unique
+  /// viewer | operator | admin
+  role  String @default("operator")
+  runs  Run[]
+}
+
+model Run {
+  id      String @id @default(cuid())
+  agentId String
+  agent   Agent  @relation(fields: [agentId], references: [id])
+  repoId  String?
+  repo    Repo?  @relation(fields: [repoId], references: [id])
+
+  /// Run tree: harness batches and subagent invocations hang off a parent.
+  parentRunId String?
+  parent      Run?    @relation("RunTree", fields: [parentRunId], references: [id])
+  children    Run[]   @relation("RunTree")
+  /// Human label for a child, e.g. "batch 3/12" or "WO-4 scoper".
+  label       String?
+
+  /// RunStatus
+  status        String  @default("queued")
+  triggeredById String?
+  triggeredBy   User?   @relation(fields: [triggeredById], references: [id])
+  /// ui | schedule | api | parent
+  trigger       String  @default("ui")
+  /// JSON-TEXT Record<string, string>
+  args          String?
+
+  /// Notary: what code did this run actually see, and what did it produce?
+  workspaceId String?
+  baseRef     String?
+  baseSha     String?
+  branch      String?
+  headSha     String?
+  prUrl       String?
+  prNumber    Int?
+  /// JSON-TEXT string[] of ticket keys found in the transcript
+  ticketKeys  String?
+
+  startedAt  DateTime?
+  endedAt    DateTime?
+  costUsd    Float     @default(0)
+  tokens     Int       @default(0)
+  numTurns   Int       @default(0)
+  exitReason String?
+
+  /// Set while status is awaiting_input, so the question survives a reload.
+  pendingQuestion String?
+
+  events    RunEvent[]
+  artifacts Artifact[]
+  outcomes  RunOutcome[]
+
+  createdAt DateTime @default(now())
+
+  @@index([agentId, createdAt])
+  @@index([repoId, createdAt])
+  @@index([parentRunId])
+  @@index([status])
+}
+
+model RunEvent {
+  id    String @id @default(cuid())
+  runId String
+  run   Run    @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  /// Ordering for replay. Unique per run.
+  seq  Int
+  /// assistant | user | tool_use | tool_result | result | log | question | system
+  type String
+  /// JSON-TEXT the SDK message or a synthesised log line
+  payload String
+
+  at DateTime @default(now())
+
+  @@unique([runId, seq])
+  @@index([runId, seq])
+}
+
+/// A file the agent wrote that must outlive the leased workspace.
+model Artifact {
+  id    String @id @default(cuid())
+  runId String
+  run   Run    @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  /// report | work-order | parked | log | findings | other
+  kind       String
+  /// Path relative to the workspace root, as the agent wrote it.
+  path       String
+  /// Key in the artifact store. Phase 0: a path under ARNOLD_ARTIFACT_ROOT.
+  storageKey String
+  mimeType   String @default("text/plain")
+  sizeBytes  Int
+
+  createdAt DateTime @default(now())
+
+  @@index([runId])
+}
+
+/// The structured result an agent declares. This is what gets charted.
+model RunOutcome {
+  id    String @id @default(cuid())
+  runId String
+  run   Run    @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  /// e.g. "clean", "parked", "process-improvement-warranted", "REJECT"
+  outcome String
+  /// e.g. "hot-files", "needs-decision", "no-window", "too-large"
+  reasonCode String?
+  /// JSON-TEXT the whole parsed record
+  payload    String
+
+  at DateTime @default(now())
+
+  @@index([runId])
+  @@index([outcome])
+  @@index([reasonCode])
+}
+
+/// A leased git worktree. Reused across runs when clean, destroyed when dirty.
+model Workspace {
+  id     String @id @default(cuid())
+  repoId String
+  repo   Repo   @relation(fields: [repoId], references: [id], onDelete: Cascade)
+
+  /// Worktree path on the executor's volume.
+  path String @unique
+  /// idle | leased | dirty | destroying
+  state       String   @default("idle")
+  leasedByRun String?
+  leasedAt    DateTime?
+  lastUsedAt  DateTime @default(now())
+
+  @@index([repoId, state])
+}
+
+model Schedule {
+  id      String @id @default(cuid())
+  agentId String
+  agent   Agent  @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  repoId  String
+  cron    String
+  /// JSON-TEXT Record<string, string>
+  args    String?
+  enabled Boolean @default(true)
+
+  lastRunAt DateTime?
+}
+
+/// Spend caps are per day and per scope, so one agent cannot eat the budget.
+/// scope is "global" | "agent:<id>" | "repo:<slug>".
+model Ledger {
+  scope    String
+  day      String // YYYY-MM-DD
+  costUsd  Float  @default(0)
+  tokens   Int    @default(0)
+  runCount Int    @default(0)
+
+  @@id([scope, day])
+}

@@ -1,0 +1,183 @@
+/**
+ * Purpose: global stylesheet for the Arnold console. Loads Tailwind 4, hands it
+ * the legacy HeroUI config, and defines the few app-level primitives that are
+ * not worth a component: the transcript prose block, the receipt surface used
+ * by the provenance strip, and the "unenforced" hatch used to make a
+ * prompt-only scope enforcement look wrong at a glance.
+ */
+
+@import "tailwindcss";
+
+/* The HeroUI plugin and the dark theme come from the legacy config, which
+   Tailwind 4 loads through @config. */
+@config "../tailwind.config.ts";
+
+/*
+ * HeroUI keeps the class strings for its own components inside @heroui/theme's
+ * dist, so Tailwind must scan those files or the utilities they name are never
+ * generated. Three things conspired to stop that, and all three had to be fixed:
+ *
+ *   1. Tailwind 4 excludes node_modules from automatic content detection. Only
+ *      an explicit @source opts a path back in, so the legacy config's content
+ *      globs pointing into node_modules were doing nothing at all.
+ *   2. Under pnpm a transitive dependency lives only at
+ *      node_modules/.pnpm/@heroui+theme@<version>_<hash>/node_modules/@heroui/theme,
+ *      so "./node_modules/@heroui/theme/..." matched nothing. @heroui/theme is
+ *      therefore an EXPLICIT dependency of this app, which makes pnpm symlink it
+ *      to apps/web/node_modules where the path below is stable. Do not remove it
+ *      from package.json just because nothing imports it: Tailwind reads it.
+ *   3. 50 of the 55 dist files are .mjs, which a {js,ts,jsx,tsx} glob misses.
+ *
+ * The failure was silent and narrow: only utilities appearing nowhere in our own
+ * source went missing. The first symptom was Modal's wrapper losing its height
+ * utility, so the panel sized to its content, the footer landed 341px below the
+ * fold with nothing scrollable, and the primary action was unclickable under
+ * 1080p. Nothing errored; the button was simply out of reach.
+ */
+@source "../node_modules/@heroui/theme/dist/**/*.{js,mjs}";
+
+/* darkMode: "class" comes from the legacy config; declaring the variant here
+   too keeps `dark:` utilities working if that config is ever dropped. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+	--font-arnold-mono: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+}
+
+html,
+body {
+	min-height: 100%;
+}
+
+body {
+	background-color: hsl(var(--heroui-background));
+	color: hsl(var(--heroui-foreground));
+	-webkit-font-smoothing: antialiased;
+}
+
+/* Long transcripts and rendered markdown artifacts. Kept as CSS rather than a
+   plugin because the subset of markdown Arnold renders is small and fixed. */
+.arnold-prose {
+	font-size: 0.9375rem;
+	line-height: 1.65;
+	overflow-wrap: anywhere;
+}
+
+.arnold-prose > * + * {
+	margin-top: 0.75rem;
+}
+
+.arnold-prose h1,
+.arnold-prose h2,
+.arnold-prose h3,
+.arnold-prose h4 {
+	font-weight: 600;
+	line-height: 1.3;
+	margin-top: 1.25rem;
+}
+
+.arnold-prose h1 {
+	font-size: 1.125rem;
+}
+
+.arnold-prose h2 {
+	font-size: 1.0625rem;
+}
+
+.arnold-prose h3,
+.arnold-prose h4 {
+	font-size: 1rem;
+}
+
+.arnold-prose ul,
+.arnold-prose ol {
+	padding-left: 1.35rem;
+}
+
+.arnold-prose ul {
+	list-style: disc;
+}
+
+.arnold-prose ol {
+	list-style: decimal;
+}
+
+.arnold-prose li + li {
+	margin-top: 0.25rem;
+}
+
+.arnold-prose code {
+	font-family: var(--font-arnold-mono);
+	font-size: 0.85em;
+	padding: 0.1rem 0.3rem;
+	border-radius: 0.25rem;
+	background-color: hsl(var(--heroui-content2));
+}
+
+.arnold-prose pre {
+	font-family: var(--font-arnold-mono);
+	font-size: 0.8125rem;
+	line-height: 1.55;
+	padding: 0.75rem 0.9rem;
+	border-radius: 0.5rem;
+	background-color: hsl(var(--heroui-content2));
+	overflow-x: auto;
+}
+
+.arnold-prose pre code {
+	padding: 0;
+	background: none;
+}
+
+.arnold-prose blockquote {
+	border-left: 2px solid hsl(var(--heroui-content4));
+	padding-left: 0.75rem;
+	color: hsl(var(--heroui-default-600));
+}
+
+.arnold-prose a {
+	color: hsl(var(--heroui-primary));
+	text-decoration: underline;
+	text-underline-offset: 2px;
+}
+
+/* The Notary receipt. Dashed edge + tabular figures so a run's provenance reads
+   like something that was printed, not like another card. */
+.arnold-receipt {
+	background-image: repeating-linear-gradient(
+		45deg,
+		hsl(var(--heroui-content2)) 0px,
+		hsl(var(--heroui-content2)) 10px,
+		hsl(var(--heroui-content1)) 10px,
+		hsl(var(--heroui-content1)) 20px
+	);
+	background-size: 100% 3px;
+	background-repeat: no-repeat;
+	font-variant-numeric: tabular-nums;
+}
+
+/* Applied to a prompt-only scope enforcement and to an unparsed outcome: both
+   are "this is not actually true yet" states and must not read as neutral. */
+.arnold-unenforced {
+	background-image: repeating-linear-gradient(
+		135deg,
+		transparent 0px,
+		transparent 6px,
+		hsl(var(--heroui-warning) / 0.12) 6px,
+		hsl(var(--heroui-warning) / 0.12) 12px
+	);
+}
+
+.arnold-scroll::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+.arnold-scroll::-webkit-scrollbar-thumb {
+	background-color: hsl(var(--heroui-content4));
+	border-radius: 9999px;
+}
+
+.arnold-scroll::-webkit-scrollbar-track {
+	background-color: transparent;
+}
