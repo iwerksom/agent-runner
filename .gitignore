@@ -21,3 +21,6 @@ workspaces/
 
 # Generated verification aid (regenerate with scripts/make-prisma-typestub.mjs)
 packages/core/types/prisma-client-stub.d.ts
+
+# Local scratch, not part of the project
+_to_delete/
