@@ -18,7 +18,7 @@ export const manifest: AgentManifest = {
 	description:
 		"Reviews the branch diff against the repo's conventions and adversarial checklist, fixes the substantive issues in the working tree, and leaves the branch ready. Never pushes.",
 	kind: "command",
-	prompt: { kind: "repo", path: ".claude/commands/pre-pr-review.md" },
+	prompt: { kind: "console", path: "prompts/pre-pr-review.md" },
 
 	repos: ["example-repo"],
 	invocable: "direct",

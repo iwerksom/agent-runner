@@ -22,7 +22,7 @@ export const manifest: AgentManifest = {
 	description:
 		"Read-only per-batch worker for scripts/ai-smell-runner.py. Scans only the files it is handed against docs/ai-smells.md and returns findings as JSON.",
 	kind: "command",
-	prompt: { kind: "repo", path: ".claude/commands/ai-smell-scan.md" },
+	prompt: { kind: "console", path: "prompts/ai-smell-scan.md" },
 
 	repos: ["example-repo"],
 	// Child only: the harness owns the report file, the daily budget and the

@@ -20,7 +20,7 @@ export const manifest: AgentManifest = {
 	description:
 		"Diagnoses why a fix-pr-comments loop did not converge within MAX_ROUNDS and proposes 1 to 3 high-leverage process changes. Report only.",
 	kind: "command",
-	prompt: { kind: "repo", path: ".claude/commands/pr-loop-analyzer.md" },
+	prompt: { kind: "console", path: "prompts/pr-loop-analyzer.md" },
 
 	repos: ["example-repo"],
 	invocable: "direct",

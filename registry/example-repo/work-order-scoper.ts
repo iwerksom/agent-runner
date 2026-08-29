@@ -18,7 +18,7 @@ export const manifest: AgentManifest = {
 	description:
 		"Scopes one Jira ticket against the codebase into a work order self-contained enough for an unattended coding agent, or rejects it with a reason code.",
 	kind: "subagent",
-	prompt: { kind: "repo", path: ".claude/agents/work-order-scoper.md" },
+	prompt: { kind: "console", path: "prompts/work-order-scoper.md" },
 
 	// The subagent file has no argument-hint, because /plan-week hands it context
 	// in prose. To run it directly we rebuild that block verbatim.

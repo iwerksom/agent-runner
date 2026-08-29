@@ -23,7 +23,7 @@ export const manifest: AgentManifest = {
 	description:
 		"Plans a week of unattended agent work: capacity from the calendar, candidates from Jira, an agent-safety screen, and self-contained work orders fitted to real windows.",
 	kind: "command",
-	prompt: { kind: "repo", path: ".claude/commands/plan-week.md" },
+	prompt: { kind: "console", path: "prompts/plan-week.md" },
 
 	repos: ["example-repo"],
 	invocable: "direct",

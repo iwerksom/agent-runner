@@ -28,7 +28,7 @@ export const manifest: AgentManifest = {
 	description:
 		"Executes queued work orders unattended: branch off origin/main, implement, verify, commit, push, open a draft PR. Parks anything ambiguous instead of guessing.",
 	kind: "command",
-	prompt: { kind: "repo", path: ".claude/commands/work-queue.md" },
+	prompt: { kind: "console", path: "prompts/work-queue.md" },
 
 	repos: ["example-repo"],
 	invocable: "direct",

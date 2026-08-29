@@ -27,7 +27,7 @@ export const manifest: AgentManifest = {
 	description:
 		"Subagent form of the PR loop analyzer. Diagnoses non-convergence, writes a report, and additionally files a Jira issue or drafts .pr-loop/enhancements/<slug>.md. Wider write scope than the command of the same name.",
 	kind: "subagent",
-	prompt: { kind: "repo", path: ".claude/agents/pr-loop-analyzer.md" },
+	prompt: { kind: "console", path: "prompts/pr-loop-analyzer-subagent.md" },
 
 	repos: ["example-repo"],
 	// Spawned by /fix-pr-comments at its round cap, not pressed by an operator.

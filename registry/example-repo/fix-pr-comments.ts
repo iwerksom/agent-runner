@@ -25,7 +25,7 @@ export const manifest: AgentManifest = {
 	description:
 		"Fetches a PR's Copilot review comments, fixes the substantive ones, pushes, re-requests review and loops until clean. Records a metrics line for every terminal case.",
 	kind: "command",
-	prompt: { kind: "repo", path: ".claude/commands/fix-pr-comments.md" },
+	prompt: { kind: "console", path: "prompts/fix-pr-comments.md" },
 
 	repos: ["example-repo"],
 	invocable: "direct",
