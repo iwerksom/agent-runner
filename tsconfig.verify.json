@@ -1,0 +1,27 @@
+{
+	"//": "Purpose: typecheck the whole monorepo in an environment where Prisma's engine binaries cannot be downloaded, by pointing @prisma/client at the generated type stub. Run: node scripts/make-prisma-typestub.mjs && npx tsc -p tsconfig.verify.json. Once `pnpm db:generate` has run on a real machine, prefer `pnpm typecheck`, which uses the real client.",
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"jsx": "react-jsx",
+		"baseUrl": ".",
+		"paths": {
+			"@prisma/client": ["./packages/core/types/prisma-client-stub.d.ts"],
+			"@arnold/core": ["./packages/core/src/index.ts"],
+			"@/*": ["./apps/web/*"]
+		},
+		"typeRoots": ["./apps/web/node_modules/@types", "./packages/core/node_modules/@types"],
+		"types": ["node", "react", "react-dom"]
+	},
+	"include": [
+		"packages/core/src/**/*.ts",
+		"registry/**/*.ts",
+		"scripts/**/*.ts",
+		"apps/web/app/**/*.ts",
+		"apps/web/app/**/*.tsx",
+		"apps/web/lib/**/*.ts",
+		"apps/web/components/**/*.ts",
+		"apps/web/components/**/*.tsx",
+		"apps/web/hooks/**/*.ts"
+	],
+	"exclude": ["node_modules", "**/node_modules", ".next", "**/.next"]
+}

@@ -1,0 +1,32 @@
+{
+	"name": "@arnold/web",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "next dev --webpack",
+		"build": "next build --webpack",
+		"start": "next start",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@arnold/core": "workspace:*",
+		"@heroui/react": "^2.8.9",
+		"@heroui/theme": "^2.4.26",
+		"framer-motion": "^12.34.5",
+		"lucide-react": "^0.475.0",
+		"next": "^16.0.10",
+		"react": "^19.2.3",
+		"react-dom": "^19.2.3",
+		"zod": "^3.24.2"
+	},
+	"devDependencies": {
+		"@tailwindcss/postcss": "^4.2.1",
+		"@types/node": "20.19.39",
+		"@types/react": "19.2.7",
+		"@types/react-dom": "19.2.3",
+		"postcss": "^8.5.8",
+		"tailwindcss": "^4.2.1",
+		"typescript": "^5.9.2"
+	}
+}
