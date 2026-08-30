@@ -13,9 +13,19 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { disconnectPrisma, prisma, syncRegistry } from "../packages/core/src/index.js";
 
-const REPO_SLUG = "diamond-frontend";
-const OPERATOR_EMAIL = "arnold@rawpowerlabs.com";
-const DEFAULT_REMOTE = "https://github.com/RawPowerTools/diamond_frontend.git";
+/**
+ * The seeded repo, all env-driven so Arnold can be pointed at any project
+ * without editing code. The defaults describe the bundled reference registry
+ * rather than any real repository.
+ *
+ * The slug matters beyond display: `registry/<slug>/` is where this repo's
+ * manifests are looked up. Change TARGET_repoSlug and you must add a matching
+ * directory under registry/ and register it in registry/index.ts.
+ */
+const DEFAULT_SLUG = "example-repo";
+const DEFAULT_NAME = "Example Repo";
+const DEFAULT_REMOTE = "https://github.com/your-account/your-repo.git";
+const OPERATOR_EMAIL = process.env.ARNOLD_OPERATOR_EMAIL ?? "operator@localhost";
 
 function environmentValue(name: string): string | undefined {
 	const value = process.env[name];
@@ -23,25 +33,26 @@ function environmentValue(name: string): string | undefined {
 }
 
 async function main(): Promise<void> {
-	const configuredPath = environmentValue("DIAMOND_FRONTEND_PATH");
+	const configuredPath = environmentValue("TARGET_REPO_PATH");
 	const localPath = configuredPath === undefined ? undefined : path.resolve(configuredPath);
-	const remoteUrl = environmentValue("DIAMOND_FRONTEND_REMOTE") ?? DEFAULT_REMOTE;
+	const remoteUrl = environmentValue("TARGET_REPO_REMOTE") ?? DEFAULT_REMOTE;
+	const repoSlug = environmentValue("TARGET_repoSlug") ?? DEFAULT_SLUG;
 
 	const repoFields = {
-		name: "Diamond Frontend",
+		name: environmentValue("TARGET_REPO_NAME") ?? DEFAULT_NAME,
 		remoteUrl,
 		localPath: localPath ?? null,
 	};
 	const repoRow = await prisma.repo.upsert({
-		where: { slug: REPO_SLUG },
-		create: { slug: REPO_SLUG, ...repoFields },
+		where: { slug: repoSlug },
+		create: { slug: repoSlug, ...repoFields },
 		update: repoFields,
 	});
 	console.log(`repo: ${repoRow.slug} -> ${repoRow.localPath ?? repoRow.remoteUrl}`);
 
 	if (localPath === undefined) {
 		console.warn(
-			"warning: DIAMOND_FRONTEND_PATH is not set. The repo row is seeded, but Arnold will have to clone from the remote and cannot verify prompt files. Set it in .env.local and re-run.",
+			"warning: TARGET_REPO_PATH is not set. The repo row is seeded, but Arnold will have to clone from the remote and cannot verify prompt files. Set it in .env.local and re-run.",
 		);
 	} else if (!existsSync(localPath)) {
 		console.warn(
@@ -60,8 +71,8 @@ async function main(): Promise<void> {
 	});
 	console.log(`operator: ${operatorRow.email} (${operatorRow.role})`);
 
-	const sync = await syncRegistry(REPO_SLUG);
-	console.log(`\nregistry sync for ${REPO_SLUG}:`);
+	const sync = await syncRegistry(repoSlug);
+	console.log(`\nregistry sync for ${repoSlug}:`);
 	console.log(`  active:       ${sync.upserted.length > 0 ? sync.upserted.join(", ") : "none"}`);
 	console.log(`  orphaned:     ${sync.orphaned.length > 0 ? sync.orphaned.join(", ") : "none"}`);
 	console.log(

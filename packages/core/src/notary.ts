@@ -31,7 +31,7 @@ const TICKET_KEY_RE = /\b[A-Z]{2,10}-\d+\b/g;
  * Ticket keys in first-seen order, scanned across `sources` in the order given.
  * Order is kept because the first key seen is almost always the one the run was
  * about, which is why the caller passes the declared arguments before the
- * transcript: an agent handed `ticketKey: DAP-1690` is about DAP-1690 even if it
+ * transcript: an agent handed `ticketKey: PROJ-1690` is about PROJ-1690 even if it
  * never types the key, and it may well discuss other tickets before it does.
  */
 export function extractTicketKeys(...sources: (string | undefined)[]): string[] {
@@ -95,7 +95,7 @@ async function detectPullRequest(
  * order. Without them a run whose whole subject is an argument records no ticket
  * at all: work-order-scoper is dispatched with `ticketKey`, scopes that one
  * ticket, and answers in prose that need never repeat the key, so its first real
- * run recorded `ticketKeys: null` for a run entirely about DAP-1690.
+ * run recorded `ticketKeys: null` for a run entirely about PROJ-1690.
  */
 export async function recordProvenance(
 	runId: string,

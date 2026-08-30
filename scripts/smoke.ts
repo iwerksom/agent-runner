@@ -1,11 +1,11 @@
 /**
  * Purpose: smoke-test the two modules that have no database dependency, against
- * the REAL prompt files in the diamond_frontend checkout. These are the parts
+ * the REAL prompt files in the example-repo checkout. These are the parts
  * most likely to be silently wrong: a prompt whose `<PR>` token never got
  * substituted still runs, it just analyses the wrong PR, and a tool policy that
  * fails open looks identical to one that works until an agent writes something.
  *
- * Run: npx tsx scripts/smoke.ts <path-to-diamond_frontend-checkout>
+ * Run: npx tsx scripts/smoke.ts <path-to-example-repo-checkout>
  * Exits non-zero on the first failed assertion.
  */
 
@@ -18,18 +18,18 @@ import { atLeast } from "../packages/core/src/agents.js";
 import { extractTicketKeys } from "../packages/core/src/notary.js";
 import { renderPrompt, validateArgs } from "../packages/core/src/prompt.js";
 import { buildCanUseTool } from "../packages/core/src/writeScope.js";
-import { manifest as aiSmellScan } from "../registry/diamond-frontend/ai-smell-scan.js";
-import { manifest as fixPrComments } from "../registry/diamond-frontend/fix-pr-comments.js";
-import { manifest as analyzerSubagent } from "../registry/diamond-frontend/pr-loop-analyzer-subagent.js";
-import { manifest as analyzer } from "../registry/diamond-frontend/pr-loop-analyzer.js";
-import { manifest as prePrReview } from "../registry/diamond-frontend/pre-pr-review.js";
-import { manifest as planWeek } from "../registry/diamond-frontend/plan-week.js";
-import { manifest as scoper } from "../registry/diamond-frontend/work-order-scoper.js";
-import { manifest as workQueue } from "../registry/diamond-frontend/work-queue.js";
+import { manifest as aiSmellScan } from "../registry/example-repo/ai-smell-scan.js";
+import { manifest as fixPrComments } from "../registry/example-repo/fix-pr-comments.js";
+import { manifest as analyzerSubagent } from "../registry/example-repo/pr-loop-analyzer-subagent.js";
+import { manifest as analyzer } from "../registry/example-repo/pr-loop-analyzer.js";
+import { manifest as prePrReview } from "../registry/example-repo/pre-pr-review.js";
+import { manifest as planWeek } from "../registry/example-repo/plan-week.js";
+import { manifest as scoper } from "../registry/example-repo/work-order-scoper.js";
+import { manifest as workQueue } from "../registry/example-repo/work-queue.js";
 
 const checkout = process.argv[2];
 if (checkout === undefined) {
-	console.error("usage: tsx scripts/smoke.ts <path-to-diamond_frontend-checkout>");
+	console.error("usage: tsx scripts/smoke.ts <path-to-example-repo-checkout>");
 	process.exit(2);
 }
 
@@ -62,7 +62,7 @@ console.log("\n[2] prompt rendering: work-order-scoper gets a rebuilt context bl
 		scoper,
 		{
 			woNumber: "3",
-			ticketKey: "DAP-999",
+			ticketKey: "PROJ-999",
 			issueText: "Rename the thing. Acceptance: the thing is renamed.",
 			windowMinutes: "75",
 			hotFiles: "src/app/foo.tsx",
@@ -72,7 +72,7 @@ console.log("\n[2] prompt rendering: work-order-scoper gets a rebuilt context bl
 	const body = rendered.promptBody;
 	check("context template was appended", body.includes("## Your assignment"));
 	check("woNumber substituted", body.includes("WO-3"));
-	check("ticketKey substituted", body.includes("DAP-999"));
+	check("ticketKey substituted", body.includes("PROJ-999"));
 	check("windowMinutes substituted", body.includes("75"));
 	check("issueText substituted", body.includes("the thing is renamed"));
 	check("no unfilled {{placeholders}} remain", !/\{\{\w+\}\}/.test(body));
@@ -147,7 +147,7 @@ console.log("\n[5] write scope: artifacts-scoped pr-loop-analyzer writes only it
 console.log("\n[6] artifact scoping: a run claims its own output, not the checkout's");
 {
 	// Run against the real checkout, because that is where this failed:
-	// `.pr-loop/reports/PR-*.md` is dozens of tracked files in diamond_frontend,
+	// `.pr-loop/reports/PR-*.md` is dozens of tracked files in example-repo,
 	// and collecting all of them attributed seven reports to a run that wrote one.
 	const globs = analyzer.artifactGlobs;
 	const baseline = await snapshotArtifacts(checkout, globs);
@@ -354,8 +354,8 @@ console.log("\n[11] notary: a run records the ticket it was dispatched against")
 	// scanned before the transcript.
 	const dispatched: Record<string, string> = {
 		woNumber: "2",
-		ticketKey: "DAP-1690",
-		issueText: "Knip blocks four orders. One of them, DAP-1298, parked on the knock-on.",
+		ticketKey: "PROJ-1690",
+		issueText: "Knip blocks four orders. One of them, PROJ-1298, parked on the knock-on.",
 		windowMinutes: "90",
 		hotFiles: "(none)",
 	};
@@ -364,34 +364,34 @@ console.log("\n[11] notary: a run records the ticket it was dispatched against")
 		.filter((value): value is string => typeof value === "string");
 
 	// The regression: the scoper answers in prose and need never repeat the key,
-	// which recorded ticketKeys: null for a run wholly about DAP-1690.
+	// which recorded ticketKeys: null for a run wholly about PROJ-1690.
 	const silent = extractTicketKeys(
 		...declaredArgValues,
 		"REJECT: undecided-design. No key here.",
 	);
 	check(
 		"the dispatched ticket is recorded even when the transcript omits it",
-		silent[0] === "DAP-1690",
+		silent[0] === "PROJ-1690",
 		`got ${JSON.stringify(silent)}`,
 	);
-	check("a ticket cited in the issue text is also captured", silent.includes("DAP-1298"));
+	check("a ticket cited in the issue text is also captured", silent.includes("PROJ-1298"));
 
 	// Manifest order decides the lead: ticketKey is declared before issueText.
-	const ordered = extractTicketKeys(...declaredArgValues, "DAP-9999 came up first in prose.");
+	const ordered = extractTicketKeys(...declaredArgValues, "PROJ-9999 came up first in prose.");
 	check(
 		"the dispatched ticket leads the list",
-		ordered[0] === "DAP-1690",
+		ordered[0] === "PROJ-1690",
 		`got ${JSON.stringify(ordered)}`,
 	);
-	check("transcript-only tickets still follow", ordered.includes("DAP-9999"));
+	check("transcript-only tickets still follow", ordered.includes("PROJ-9999"));
 
 	check(
 		"keys are de-duplicated across sources",
-		extractTicketKeys("DAP-1", "DAP-1 DAP-1").length === 1,
+		extractTicketKeys("PROJ-1", "PROJ-1 PROJ-1").length === 1,
 	);
 	check(
 		"absent sources are skipped",
-		extractTicketKeys(undefined, "DAP-2", undefined).length === 1,
+		extractTicketKeys(undefined, "PROJ-2", undefined).length === 1,
 	);
 	check("a run with nothing to record yields none", extractTicketKeys(undefined).length === 0);
 }
@@ -411,7 +411,7 @@ console.log("\n[12] outcome parsing: a work order with no REJECT line is accepte
 		// The regression: the scoper announces only the negative case, so a good
 		// work order contains no verdict line at all.
 		const workOrder =
-			"# WO-3 DAP-1688\n\n## Steps\n1. Declare resolve.alias.\n2. Run the e2e specs.\n";
+			"# WO-3 PROJ-1688\n\n## Steps\n1. Declare resolve.alias.\n2. Run the e2e specs.\n";
 		const accepted = resolveReportVerdict(
 			scoperSpec.verdictPattern,
 			scoperSpec.fallbackOutcome,
@@ -436,20 +436,20 @@ console.log("\n[12] outcome parsing: a work order with no REJECT line is accepte
 		check(
 			"the reason code is one the manifest declares",
 			rejected.verdictKind === "matched" &&
-				scoper.reasonCodes.includes(rejected.verdictOutcome),
+				(scoper.reasonCodes ?? []).includes(rejected.verdictOutcome),
 		);
 
 		// A verdict of `hot-files: some-branch` carries outcome and reason both.
 		const withReason = resolveReportVerdict(
 			scoperSpec.verdictPattern,
 			scoperSpec.fallbackOutcome,
-			"REJECT: hot-files:DAP-1333-import-cleanup",
+			"REJECT: hot-files:PROJ-1333-import-cleanup",
 		);
 		check(
 			"a colon-suffixed verdict splits into outcome and reason",
 			withReason.verdictKind === "matched" &&
 				withReason.verdictOutcome === "hot-files" &&
-				withReason.verdictReasonCode === "DAP-1333-import-cleanup",
+				withReason.verdictReasonCode === "PROJ-1333-import-cleanup",
 			`got ${JSON.stringify(withReason)}`,
 		);
 

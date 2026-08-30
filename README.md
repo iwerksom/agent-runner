@@ -2,12 +2,21 @@
 
 **A**gent **R**unner, **N**otary, **O**rchestrator, **L**edger, **D**ispatcher.
 
-A console for running Claude agents: list the registered agents, trigger a run,
-watch the transcript live, and keep a durable record of what each run cost, what
-code it saw, and what it produced.
+A console for running Claude agents against any repo. It lists the agents a
+project declares in its `.claude/` directory, lets you trigger one, streams the
+transcript live, and keeps a durable record of what each run cost, what code it
+saw, and what it produced.
 
-The architecture and the phased plan live in the target repo at
-`diamond_frontend/docs/agent-console-architecture.md`. This repo is Phase 0.
+Point it at a checkout, write a manifest per agent, press Run.
+
+| Doc                                            | What it is                                                                             |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------- |
+| [`docs/HANDOVER.md`](docs/HANDOVER.md)         | **Start here.** What works today, what has never run, and how to get a first real run. |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md)       | Why the code looks like this. Read before changing anything structural.                |
+| [`docs/architecture.md`](docs/architecture.md) | The plan of record, written before the code.                                           |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md)           | Seven phases with acceptance criteria.                                                 |
+
+This repo is Phase 0: single app, SQLite, in-process execution, no auth.
 
 The five words are the five modules, not decoration:
 
@@ -34,16 +43,16 @@ only the components behind that sentence get replaced.
 nvm use                # 22.22.3
 npm i -g pnpm          # if you do not have it
 cp .env.example .env.local
-# fill in ANTHROPIC_API_KEY and check DIAMOND_FRONTEND_PATH
+# fill in ANTHROPIC_API_KEY and check TARGET_REPO_PATH
 pnpm env:check         # confirms the env file is found before anything else runs
 pnpm setup             # install, prisma generate, db push, seed
 pnpm dev               # http://localhost:3000
 ```
 
-`pnpm setup` seeds one repo row (`diamond-frontend`) and reconciles the registry
-against that checkout's `.claude/` directory. Two agents come registered; every
-other command and subagent it finds shows up as `unregistered`, visible but not
-runnable until it gets a manifest overlay.
+`pnpm setup` seeds one repo row from `TARGET_REPO_PATH` and reconciles the
+registry against that checkout's `.claude/` directory. Any command or subagent it
+finds without a manifest overlay shows up as `unregistered`: visible, and not
+runnable until someone declares what it may change.
 
 ### One env file, injected twice
 
@@ -105,34 +114,44 @@ offline box). Two scripts cover that case:
 
 ```bash
 pnpm typecheck:offline   # generates a type stub from schema.prisma, then tsc
-pnpm smoke ../diamond_frontend   # exercises prompt rendering + tool policy for real
+pnpm smoke ../example-repo   # exercises prompt rendering + tool policy for real
 pnpm check:rsc           # catches the RSC/HeroUI trap below; also runs in pnpm build
 ```
 
-`pnpm smoke` is the useful one. It renders both registered agents' prompts from
-the actual files in a checkout and asserts the substitutions landed, then tries
-25 tool calls against the write-scope gate and asserts the right ones are
+`pnpm smoke` is the useful one. It renders every registered agent's prompt from
+the actual files in a checkout and asserts the substitutions landed, then throws
+a batch of tool calls at the write-scope gate and asserts the right ones are
 refused. A prompt whose `<PR>` token never got substituted still runs; it just
 analyses the wrong PR. That class of bug is invisible without this.
 
-## What is registered in Phase 0
+## The bundled registry is a set of examples
 
-| Agent               | Kind     | Write scope | Why it is first                                                     |
-| ------------------- | -------- | ----------- | ------------------------------------------------------------------- |
-| `work-order-scoper` | subagent | `read-only` | Cannot break anything, so it proves the pipeline end to end         |
-| `pr-loop-analyzer`  | command  | `artifacts` | Writes exactly one report, so it proves artifact collection is real |
+`registry/example-repo/` holds eight manifests written against one specific
+project. That project is not the point: read them as worked examples and
+templates, then add a sibling directory for your own repo and register it in
+`registry/index.ts`.
 
-`work-order-scoper` normally runs as a child of `/plan-week`, once per survivor
-of that command's screen. Here it is promoted to direct invocation so you can
-paste one Jira issue and watch the whole path work.
+They are worth reading because between them they cover every agent kind and
+every write scope the model supports:
 
-Neither agent touches product code. Mutating agents (`pre-pr-review`,
-`work-queue`, `fix-pr-comments`) arrive in Phase 4, once write scope is gated by
-role and credentials are mounted per tier.
+| Agent                       | Kind     | Write scope       | What it demonstrates                                                                                    |
+| --------------------------- | -------- | ----------------- | ------------------------------------------------------------------------------------------------------- |
+| `work-order-scoper`         | subagent | `read-only`       | A subagent promoted to direct invocation, with its caller's context block rebuilt via `contextTemplate` |
+| `ai-smell-scan`             | command  | `read-only`       | `invocable: "child"` — the worker of a fan-out script, not a runnable unit on its own                   |
+| `pr-loop-analyzer`          | command  | `artifacts`       | Writes exactly one report, so artifact collection has something to collect                              |
+| `plan-week`                 | command  | `artifacts`       | `needs-local-session` plus `unattendedIfArgs`, and a `mainBookkeeping` grant                            |
+| `pre-pr-review`             | command  | `working-tree`    | Edits code in the leased worktree with no push credential mounted                                       |
+| `work-queue`                | command  | `draft-pr`        | Branches, pushes, opens draft PRs; prompt guardrails encoded as an allow-list                           |
+| `fix-pr-comments`           | command  | `external-writes` | The most privileged tier, and the only `needs-human` agent                                              |
+| `pr-loop-analyzer-subagent` | subagent | `external-writes` | The wider-scoped twin behind an id collision, registered so it is visible rather than silently shadowed |
+
+**All eight are registered, but the gating they assume is not built yet.** There
+is no auth, so anything reaching the port can trigger any of them, including the
+ones that write to a real remote. See [`docs/HANDOVER.md`](docs/HANDOVER.md).
 
 ## The thing worth understanding before adding an agent
 
-Every agent in `diamond_frontend/.claude/` enforces its own limits with **prompt
+Every agent in `example-repo/.claude/` enforces its own limits with **prompt
 text only**. Command files carry no `tools:` frontmatter at all, and the two
 subagents declare unrestricted `Bash`. `ai-smell-scan` says "You have no write
 tools" and `work-order-scoper` says "you do not run git write commands", and
@@ -179,10 +198,14 @@ arnold/
     prisma/schema.prisma  SQLite in Phase 0, Postgres in Phase 1
     src/agents.ts         the manifest contract; read this first
   registry/               manifest overlays, one directory per repo
-    diamond-frontend/
+    example-repo/
   apps/web/               Next.js: UI + API routes + the SSE relay
   scripts/                seed, smoke test, offline type stub
 ```
 
 `packages/core/src/agents.ts` is the file to read first. Everything else reads
 from it.
+
+## Licence
+
+MIT. See [`LICENSE`](LICENSE).

@@ -23,7 +23,7 @@ datasource db {
 /// A target repository. Multi-repo from day one even though Phase 0 seeds one.
 model Repo {
   id            String  @id @default(cuid())
-  slug          String  @unique // "diamond-frontend"
+  slug          String  @unique // "example-repo"
   name          String
   remoteUrl     String
   /// Local checkout used as the clone source, so Phase 0 needs no network.

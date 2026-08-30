@@ -172,7 +172,7 @@ export async function runAgent(runId: string): Promise<void> {
 
 		// Taken before the loop, so collection can tell this run's files from the
 		// ones the checkout already carried. A leased worktree is a real checkout:
-		// diamond_frontend tracks 51 files under .pr-loop/reports alone.
+		// example-repo tracks 51 files under .pr-loop/reports alone.
 		const artifactBaseline = await snapshotArtifacts(
 			lease.workspacePath,
 			fullManifest.artifactGlobs,
@@ -201,7 +201,7 @@ export async function runAgent(runId: string): Promise<void> {
 			// Omitting it loads user, project AND local settings. The worktree is a
 			// real checkout, so "local" means the target repo's own
 			// .claude/settings.local.json — 54 pre-approved permissions in
-			// diamond_frontend, including Bash(git push *), Bash(git commit *) and
+			// example-repo, including Bash(git push *), Bash(git commit *) and
 			// Bash(gh pr *). Those are consulted before canUseTool, so a repo could
 			// pre-approve its way straight past the manifest's allow-list, which is
 			// the one thing this console exists to prevent.

@@ -5,10 +5,10 @@
  */
 
 import type { AgentManifest } from "@arnold/core";
-import { diamondFrontendManifests } from "./diamond-frontend/index.js";
+import { exampleRepoManifests } from "./example-repo/index.js";
 
 export const registryManifestsBySlug: Record<string, AgentManifest[]> = {
-	"diamond-frontend": diamondFrontendManifests,
+	"example-repo": exampleRepoManifests,
 };
 
 /** Empty array for an unknown slug: a repo with no registered agents is valid. */

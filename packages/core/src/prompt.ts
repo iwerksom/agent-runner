@@ -16,9 +16,9 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { AgentManifest, ArgSpec } from "./agents.js";
 import { ValidationError } from "./errors.js";
+import { repoRoot } from "./paths.js";
 
 /** A prompt file's frontmatter, flattened to top-level scalar lines. */
 export type ParsedPromptFile = {
@@ -218,13 +218,20 @@ export function assembleArgumentLine(
 	return [...positionalParts, ...flagParts].join(" ");
 }
 
-/** Where `prompt.kind === "console"` bodies live. */
-function registryRoot(): string {
+/**
+ * Where `prompt.kind === "console"` bodies live: paths are relative to the repo
+ * root, so a manifest says `prompts/plan-week.md` and means exactly that from
+ * any entry point. Resolving against the cwd instead would land somewhere
+ * different for `pnpm dev` (apps/web) than for `pnpm seed` (packages/core).
+ *
+ * These are the prompts Arnold owns rather than borrows. An agent reusable
+ * across several repos belongs here; one that encodes a single project's
+ * process belongs in that project's own `.claude/` and uses `kind: "repo"`.
+ */
+function consolePromptRoot(): string {
 	const fromEnv = process.env.ARNOLD_REGISTRY_ROOT;
 	if (fromEnv !== undefined && fromEnv !== "") return path.resolve(fromEnv);
-	// packages/core/src/prompt.ts -> repo root -> registry
-	const here = path.dirname(fileURLToPath(import.meta.url));
-	return path.resolve(here, "..", "..", "..", "registry");
+	return repoRoot();
 }
 
 async function readPromptSource(
@@ -241,7 +248,7 @@ async function readPromptSource(
 	const absolute =
 		source.kind === "repo"
 			? path.join(workspaceRoot, source.path)
-			: path.join(registryRoot(), source.path);
+			: path.join(consolePromptRoot(), source.path);
 	try {
 		return await readFile(absolute, "utf8");
 	} catch {

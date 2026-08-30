@@ -2,7 +2,7 @@
  * Purpose: turn a manifest's declared write scope into an actual permission
  * decision for every tool call, as the SDK's `canUseTool` callback.
  *
- * Every agent in diamond_frontend starts at `scopeEnforcement: "prompt-only"` —
+ * Every agent in example-repo starts at `scopeEnforcement: "prompt-only"` —
  * "read-only" is a sentence in a prompt and the subagents declare unrestricted
  * `Bash`. This file is where the declared scope stops being a description. It is
  * the only thing standing between a read-only agent and a `git push`, so it is

@@ -1,6 +1,6 @@
 /**
  * Purpose: root layout. Sets the dark theme on <html> (the console is dark by
- * default, matching diamond_frontend), mounts the client provider boundary and
+ * default, matching example-repo), mounts the client provider boundary and
  * the top nav, and constrains every page to one content column.
  *
  * Server component: nothing here needs interactivity, so the only client code
