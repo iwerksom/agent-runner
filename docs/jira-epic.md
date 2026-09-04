@@ -15,7 +15,7 @@ bottom of this file.
 
 **Description:**
 
-A console for running the Claude agents in `diamond_frontend/.claude/`: a
+A console for running the Claude agents in the target repo's `.claude/`: a
 registry of what exists, one-click execution, live and replayable transcripts,
 durable run records with cost and token accounting, and collection of the
 artifacts and metrics the agents already emit.
@@ -24,7 +24,7 @@ Arnold is Agent Runner, Notary, Orchestrator, Ledger, Dispatcher. Those five
 words are the five modules.
 
 Architecture and phased plan:
-`diamond_frontend/docs/agent-console-architecture.md`. Code lives in a
+`<target-repo>/docs/agent-console-architecture.md`. Code lives in a
 standalone monorepo at `C:\code\arnold`, not inside the product repo.
 
 **Why now.** Seven agent ids exist across eight files in `.claude/`, plus the
@@ -47,7 +47,7 @@ changing it.
   owns only the metadata those files lack.
 - Per-run git workspace (bare mirror plus `git worktree`). Mutating agents are
   first class from the data model, not a deferred exception.
-- Multi-repo `Repo` entity from day one, seeded with `diamond_frontend` only.
+- Multi-repo `Repo` entity from day one, seeded with one target repo only.
 - Execution mode declared explicitly: `unattended`, `needs-human`,
   `needs-local-session`, with an argument-based relaxation so `plan-week`
   becomes headless once `--windows=` or `--hours=` is supplied.
@@ -76,7 +76,7 @@ piece most likely to be wrong and the cheapest to test early.
 
 **Acceptance criteria**
 
-- `pnpm setup` seeds the `diamond-frontend` repo row and reconciles the registry
+- `pnpm setup` seeds the target repo row and reconciles the registry
   against that checkout's `.claude/` directory.
 - Every command and subagent found without a manifest overlay appears in the UI
   as `unregistered`: visible, and not runnable.
@@ -229,7 +229,7 @@ calendar route intact. Onboard a second repo to prove the multi-repo model. The
 
 ## Prompt for local Claude Code
 
-Paste this into Claude Code in the `diamond_frontend` repo, where the Atlassian
+Paste this into Claude Code in the target repo, where the Atlassian
 MCP is available:
 
 > Read `C:\code\arnold\docs\jira-epic.md`. Create the epic in Jira project DAP
