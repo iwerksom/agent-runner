@@ -33,8 +33,12 @@ async function read<T>(label: string, run: () => Promise<T>, fallback: T): Promi
 	}
 }
 
-export async function fetchRepos(): Promise<RepoDto[]> {
-	return read("fetchRepos", () => loadRepoDtos(), []);
+/**
+ * Active repos only unless asked otherwise. Archived repos still exist and still
+ * own their run history; they are simply not somewhere a new run can be sent.
+ */
+export async function fetchRepos(options: { includeArchived?: boolean } = {}): Promise<RepoDto[]> {
+	return read("fetchRepos", () => loadRepoDtos(options), []);
 }
 
 export async function fetchAgents(repoSlug?: string): Promise<AgentSummary[]> {

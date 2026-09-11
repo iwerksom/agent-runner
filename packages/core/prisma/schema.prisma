@@ -30,6 +30,9 @@ model Repo {
   localPath     String?
   defaultBranch String  @default("main")
   claudeDir     String  @default(".claude")
+  /// Set when a repo with run history is retired. Archived repos keep their runs
+  /// and disappear from the switcher; they are never a target for a new run.
+  archivedAt    DateTime?
 
   agents     AgentRepo[]
   runs       Run[]

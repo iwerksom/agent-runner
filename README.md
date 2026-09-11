@@ -54,6 +54,33 @@ registry against that checkout's `.claude/` directory. Any command or subagent i
 finds without a manifest overlay shows up as `unregistered`: visible, and not
 runnable until someone declares what it may change.
 
+### Adding more repos
+
+`TARGET_REPO_*` seeds the **first** row only — an empty database has no console
+to add a row from. After that, repositories are managed at
+[/repos](http://localhost:3000/repos): add, edit, archive, restore, remove. The
+switcher in the top bar scopes the Agents and Runs screens to one repo or shows
+them all.
+
+The local checkout path is probed as you type. A path that does not exist or is
+not a git checkout is refused there, with the reason — the alternative is a repo
+row that looks fine in the list and fails inside a workspace lease several
+minutes into a run. The probe also reads the checkout's own branch and remote and
+offers them as defaults.
+
+A repo's agents come from `registry/<slug>/`, so a newly added repo has none
+until that directory exists and is registered in `registry/index.ts`. Registering
+a repo is what makes it a target; declaring manifests is what gives it agents.
+
+Removal is two operations. **Archive** keeps every run, artifact and outcome and
+just takes the repo out of the switcher; it is always available and reversible.
+**Delete** is offered only when no run references the repo, because `Run.repoId`
+is nullable and deleting a repo with history would silently detach it rather than
+fail. See `docs/DECISIONS.md` #16.
+
+> Phase 0 has no auth, and registering a repo names a filesystem path Arnold will
+> clone and run agents against. Keep the console on localhost until Phase 3.
+
 ### One env file, injected twice
 
 `.env.local` at the repo root is the only place these values live, and neither

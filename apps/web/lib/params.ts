@@ -63,6 +63,63 @@ export const registrySyncBodySchema = z.object({
 });
 export type RegistrySyncBody = z.infer<typeof registrySyncBodySchema>;
 
+export const reposQuerySchema = z.object({
+	/** The repos admin page is the only caller that wants retired repos back. */
+	includeArchived: z
+		.enum(["true", "false"])
+		.default("false")
+		.transform((value) => value === "true"),
+});
+export type ReposQuery = z.infer<typeof reposQuerySchema>;
+
+/**
+ * Envelope only. Slug shape, checkout existence and uniqueness are core's job in
+ * `@arnold/core/repos`, for the same reason run arguments are the Dispatcher's:
+ * a second copy of those rules here would drift from the one that runs.
+ *
+ * `localPath` accepts an empty string so the form can clear it. Core normalises
+ * empty to null, which means "clone from the remote".
+ */
+export const createRepoBodySchema = z.object({
+	slug: z.string().min(1),
+	name: z.string().min(1),
+	remoteUrl: z.string().min(1),
+	localPath: z.string().optional(),
+	defaultBranch: z.string().min(1).default("main"),
+	claudeDir: z.string().min(1).default(".claude"),
+});
+export type CreateRepoBody = z.infer<typeof createRepoBodySchema>;
+
+/** Every field optional; the slug comes from the route, and is immutable. */
+export const updateRepoBodySchema = z
+	.object({
+		name: z.string().min(1).optional(),
+		remoteUrl: z.string().min(1).optional(),
+		localPath: z.string().optional(),
+		defaultBranch: z.string().min(1).optional(),
+		claudeDir: z.string().min(1).optional(),
+	})
+	.refine((patch) => Object.keys(patch).length > 0, {
+		message: "No fields to update.",
+	});
+export type UpdateRepoBody = z.infer<typeof updateRepoBodySchema>;
+
+/**
+ * `archive` retires a repo and keeps its runs; `delete` removes the row and is
+ * refused by core when any run references it. The default is the safe one, so a
+ * caller that forgets the parameter cannot destroy history by omission.
+ */
+export const removeRepoQuerySchema = z.object({
+	mode: z.enum(["archive", "delete"]).default("archive"),
+});
+export type RemoveRepoQuery = z.infer<typeof removeRepoQuerySchema>;
+
+export const probeCheckoutBodySchema = z.object({
+	localPath: z.string().min(1),
+	claudeDir: z.string().min(1).default(".claude"),
+});
+export type ProbeCheckoutBody = z.infer<typeof probeCheckoutBodySchema>;
+
 /** Tolerates an absent or non-JSON body, which zod then reports as invalid. */
 export async function readJsonBody(request: Request): Promise<unknown> {
 	try {

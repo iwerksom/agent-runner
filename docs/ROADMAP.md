@@ -72,17 +72,37 @@ worktree pool gets proper leasing and dirty-destroy semantics.
 
 ---
 
-## Phase 2: Registry sync and run trees
+## Phase 2: Registry sync, repo management, and run trees
 
 Registry sync with `unregistered` / `orphaned` states and argument-drift
-warnings. Subagent and harness child runs with cost roll-up. Register the first
-`harness` agent. Outcome parsing for JSONL streams, and the first outcome-mix
-chart.
+warnings. Target repositories managed from the console rather than the
+environment. Subagent and harness child runs with cost roll-up. Register the
+first `harness` agent. Outcome parsing for JSONL streams, and the first
+outcome-mix chart.
+
+**Note:** repo management and the repo switcher were built early, during Phase 0,
+at the maintainer's request. The screens and the API exist and are listed as done
+below. What is _not_ done is the part that belongs to Phase 3: registering a repo
+is an unauthenticated action, so anyone reaching the port can point Arnold at any
+path on the host. Treat the remaining work as gating, not building.
 
 **Acceptance criteria**
 
 - Adding a command to a target repo's `.claude/commands/` and hitting sync makes
   it appear as `unregistered` with no console code change.
+- [x] A repo is registered, edited and retired from the console, with no edit to
+      `.env.local` and no re-run of `pnpm seed`. `TARGET_REPO_*` seeds the first
+      row only, because an empty database has no UI to add one from.
+- [x] A candidate checkout is probed before it is accepted: a path that does not
+      exist or is not a git checkout is refused at registration time, with the
+      reason, rather than failing inside a workspace lease minutes into a run.
+- [x] A repo that any run references cannot be deleted, only archived. Archiving
+      keeps every run, artifact and outcome and removes the repo from the
+      switcher. See DECISIONS #16.
+- [x] The console is scoped to one repo, or to all of them, from a switcher in
+      the nav, and the choice survives navigating between Agents and Runs.
+- [ ] A repo registered in the console with no `registry/<slug>/` directory
+      reports why it has no agents, rather than rendering as an empty group.
 - Deleting a prompt file marks its agent `orphaned`, disables the Run button, and
   preserves run history.
 - An `argument-hint` that stops matching the manifest's positional args raises a
@@ -110,6 +130,10 @@ push. Audit trail on every run.
   its environment, so the tool policy and the environment both refuse.
 - Registering an agent, raising its write scope, or granting `mainBookkeeping`
   requires admin.
+- Registering, editing or removing a **repo** requires admin. This is the widest
+  unauthenticated capability Phase 0 has: a repo row names a filesystem path that
+  Arnold will clone and run agents against, so until this lands the console must
+  not be exposed beyond localhost.
 - Every run records who triggered it.
 - The guarded-push helper refuses a `mainBookkeeping` push whose staged diff
   touches a path outside the declared globs, or whose commit message lacks
@@ -173,7 +197,10 @@ multi-repo model. The "needs you" page as the primary landing view.
   `needs-local-session`, executes them with the same `runAgent` code path, and
   publishes events back. The enqueue contract does not change; only which
   executor claims the job.
-- A second repo is registered and one agent runs against both.
+- A second repo is registered and one agent runs against both. Registration
+  itself is no longer the obstacle — that shipped in Phase 2 — so what this
+  criterion now tests is the manifest half: one agent whose `repos` covers both
+  slugs, running successfully against each.
 - The "needs you" page aggregates every `awaiting_input` run plus the
   decision-required reason codes from parked work.
 

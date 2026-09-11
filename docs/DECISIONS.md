@@ -195,3 +195,65 @@ Recorded because it cost real time. Three rounds of plausible static diagnosis o
 For any "nothing happens in the UI" report: build a fixture-data preview route,
 drive it with Playwright, measure element geometry and network calls, and only
 then theorise.
+
+## 16. A repo with runs is archived, never deleted
+
+`Run.repoId` is optional, so Prisma's default referential action for the relation
+is `SetNull`. Deleting a `Repo` therefore does not fail on its runs — it silently
+nulls out the column, and every one of those runs loses the repo it ran against.
+That is precisely the provenance the Notary exists to record, discarded by an
+operator who thought they were tidying up a list.
+
+So removal is two operations, not one:
+
+| Operation | What survives                                        | When it is offered         |
+| --------- | ---------------------------------------------------- | -------------------------- |
+| Archive   | Everything. The repo leaves the switcher only.       | Always, and reversible.    |
+| Delete    | Nothing to lose: refused while any run refers to it. | Only when `runCount` is 0. |
+
+`planRepoRemoval` computes the counts before the dialog opens, so the operator
+reads the consequence rather than discovering it. Core enforces the rule and the
+API defaults `mode` to `archive`, so a caller that forgets the parameter cannot
+destroy history by omission.
+
+The same reasoning is why the slug is immutable after creation. Manifests name
+their repo by slug and `registry/<slug>/` is a real directory; a rename in the
+console would orphan every manifest pointing at it and leave the directory
+behind, with nothing failing loudly enough to notice.
+
+## 17. The repo selection is a view, not a permission
+
+The switcher writes `?repo=<slug>` and an `arnold.repo` cookie. Both are read
+back by `lib/repoSelection.ts`, URL first, and neither is trusted: a slug that no
+longer resolves to an active repo falls back to "all repos" and says so, because
+a cookie outliving a reseed should not render an empty console with no
+explanation.
+
+It is deliberately _only_ a view. Every trigger names its repo explicitly in the
+request body, and the Dispatcher reads that, never the cookie. A stale or forged
+cookie can therefore change what an operator is looking at and can never change
+where a run happens — which is why the cookie is `httpOnly: false` and carries no
+integrity protection. If the selection ever starts feeding the dispatch path,
+that reasoning is void and it needs signing.
+
+Two sources rather than one because they answer different questions. The URL
+makes a repo-scoped view linkable, matching how the run status filter already
+behaves. The cookie makes the choice survive navigating to a page that was linked
+without the param. The root layout can only see the cookie — layouts are not
+given search params — so `RepoSwitcher` reconciles the two on the client, which
+is the one place both are visible.
+
+## 18. Never name an App Router folder with a leading underscore
+
+`/api/repos/_probe` and `/api/repos/_selection` were the first attempt at keeping
+these endpoints out of the `[repoSlug]` namespace, where a repo slug could shadow
+them. Next treats an underscore-prefixed folder as a **private folder** and opts
+it, and every subfolder, out of routing entirely.
+
+The failure is quiet and misleading. `POST /api/repos/_probe` did not 404: it fell
+through to the dynamic sibling `[repoSlug]/route.ts` with `repoSlug` bound to
+`"_probe"`, which has no `POST` export, so it returned **405 Method Not Allowed**.
+A method error for a route that exists, on a path that does not.
+
+Both now live as siblings of `/api/repos` — `/api/repo-probe` and
+`/api/repo-selection` — which cannot collide with a slug at all.

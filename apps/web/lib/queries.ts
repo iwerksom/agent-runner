@@ -32,9 +32,19 @@ const runSummaryRelations = {
 	_count: { select: { artifacts: true, children: true } },
 } as const;
 
-export async function loadRepoDtos(): Promise<RepoDto[]> {
+/**
+ * Archived repos are excluded by default, because every caller that is choosing
+ * where to run something wants the list of places it *can* run. The repos admin
+ * page is the one screen that wants them, and asks.
+ */
+export async function loadRepoDtos(
+	options: { includeArchived?: boolean } = {},
+): Promise<RepoDto[]> {
 	const repoRows = await prisma.repo.findMany({
-		orderBy: { slug: "asc" },
+		where: options.includeArchived === true ? {} : { archivedAt: null },
+		// Active first, then alphabetical, so archiving a repo moves it out of the
+		// way without removing it from the screen that manages it.
+		orderBy: [{ archivedAt: "asc" }, { slug: "asc" }],
 		include: { _count: { select: { agents: true, runs: true } } },
 	});
 	return repoRows.map(mapRepo);
