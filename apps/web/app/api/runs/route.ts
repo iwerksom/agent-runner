@@ -49,6 +49,7 @@ export async function POST(request: Request) {
 			repoSlug: parsedBody.data.repoSlug,
 			args: parsedBody.data.args,
 			triggeredById,
+			...(parsedBody.data.baseRef === undefined ? {} : { baseRef: parsedBody.data.baseRef }),
 		});
 		return ok({ runId }, { status: 201 });
 	} catch (err) {

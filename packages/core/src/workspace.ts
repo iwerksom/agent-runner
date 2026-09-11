@@ -356,3 +356,101 @@ export async function discardRepoWorkspaces(
 
 	return { removedWorktrees: rows.length };
 }
+
+/**
+ * A ref name that is safe to hand to git as a positional argument.
+ *
+ * The leading character must be alphanumeric, which is the part that matters:
+ * `runGit` uses execFile with an argument array so there is no shell to inject
+ * into, but git itself would read a leading `-` as an option. `--upload-pack=`
+ * in a ref position is a command execution primitive, so this is a real gate and
+ * not defensive decoration.
+ *
+ * Everything else here is git's own ref grammar, narrowed: no `..`, no `@{`, no
+ * ASCII control characters, no trailing `/` or `.lock`. Branch names with
+ * slashes (`docs/expand-documentation`), tags, and full or abbreviated SHAs all
+ * pass.
+ */
+const SAFE_REF_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,200}$/;
+
+export function isSafeGitRef(ref: string): boolean {
+	if (!SAFE_REF_RE.test(ref)) return false;
+	if (ref.includes("..") || ref.includes("@{")) return false;
+	if (ref.endsWith("/") || ref.endsWith(".lock")) return false;
+	return true;
+}
+
+export type RefCheck =
+	/** The ref resolves. `sha` is the commit it points at right now. */
+	| { refState: "resolved"; sha: string }
+	/** Nothing here resolves it, and we could look. */
+	| { refState: "unknown"; candidates: string[] }
+	/** Neither a mirror nor a local checkout was available to check against. */
+	| { refState: "unverifiable" };
+
+/**
+ * Does `ref` name something in this repo?
+ *
+ * Called at dispatch so a typo fails immediately and for free, instead of
+ * several minutes later inside `git worktree add` with a run row already
+ * created, a workspace leased and the operator watching an empty transcript.
+ *
+ * Checks the mirror first because that is what the lease will actually resolve
+ * against, and falls back to the local checkout when no mirror exists yet — on
+ * a repo's first run there is nothing else to ask. When neither is present the
+ * answer is `unverifiable` rather than a guess: a repo cloned from a remote we
+ * have not fetched cannot be checked without the network, and refusing a valid
+ * ref would be worse than letting the lease report git's own error.
+ */
+export async function checkRepoRef(repo: Repo, ref: string): Promise<RefCheck> {
+	const sources: string[] = [];
+	const mirror = mirrorPathFor(repo.slug);
+	if (await pathExists(mirror)) sources.push(mirror);
+	if (repo.localPath !== null && (await pathExists(repo.localPath))) sources.push(repo.localPath);
+	if (sources.length === 0) return { refState: "unverifiable" };
+
+	for (const source of sources) {
+		try {
+			// `^{commit}` makes this fail on a ref that exists but is not a commit,
+			// which is what the worktree needs.
+			const { gitStdout } = await runGit([
+				"--git-dir=" + gitDirFor(source),
+				"rev-parse",
+				"--verify",
+				"--quiet",
+				`${ref}^{commit}`,
+			]);
+			const sha = gitStdout.trim();
+			if (sha !== "") return { refState: "resolved", sha };
+		} catch {
+			// rev-parse exits non-zero for an unknown ref; try the next source.
+		}
+	}
+
+	// Offer the branches that do exist, so the error names the alternatives
+	// rather than only the mistake.
+	const candidates: string[] = [];
+	try {
+		const { gitStdout } = await runGit([
+			"--git-dir=" + gitDirFor(sources[0] as string),
+			"for-each-ref",
+			"--format=%(refname:short)",
+			"--count=20",
+			"refs/heads",
+		]);
+		candidates.push(
+			...gitStdout
+				.split("\n")
+				.map((line) => line.trim())
+				.filter((line) => line !== ""),
+		);
+	} catch {
+		// Listing is a convenience; its failure must not change the verdict.
+	}
+	return { refState: "unknown", candidates };
+}
+
+/** A bare mirror is its own git-dir; a working checkout keeps one in `.git`. */
+function gitDirFor(source: string): string {
+	return source.endsWith(".git") ? source : path.join(source, ".git");
+}

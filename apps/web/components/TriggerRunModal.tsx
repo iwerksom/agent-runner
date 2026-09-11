@@ -81,6 +81,8 @@ export function TriggerRunModal({
 	const {
 		triggerRunValues,
 		triggerRunSetValue,
+		triggerRunBaseRef,
+		triggerRunSetBaseRef,
 		triggerRunMissingArgNames,
 		triggerRunCanSubmit,
 		triggerRunPending,
@@ -141,6 +143,22 @@ export function TriggerRunModal({
 
 				<ModalBody className="gap-4">
 					<p className="text-sm text-default-500">{agent.description}</p>
+
+					{/*
+					 * Above the arguments, because it decides which code the arguments
+					 * are interpreted against. A review or audit agent is most useful on
+					 * a branch before it merges, and until this existed every run was
+					 * pinned to the repo's default branch.
+					 */}
+					<Input
+						size="sm"
+						label="Base ref"
+						value={triggerRunBaseRef}
+						onValueChange={triggerRunSetBaseRef}
+						placeholder="default branch"
+						classNames={{ input: "font-mono" }}
+						description="Branch, tag or commit to run against. Leave empty for the repo's default branch. The ref is resolved before the run starts, so a typo is refused here rather than inside the workspace lease."
+					/>
 
 					{agent.ingestsUntrustedInput ? (
 						<div className="flex gap-2 rounded-medium border border-default-200 bg-content2 p-3 text-xs text-default-600">
