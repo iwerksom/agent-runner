@@ -20,6 +20,7 @@
  */
 
 import type { AgentManifest } from "@arnold/core";
+import { exampleRepoValues } from "./values.js";
 
 export const manifest: AgentManifest = {
 	id: "pr-loop-analyzer-subagent",
@@ -30,6 +31,13 @@ export const manifest: AgentManifest = {
 	prompt: { kind: "console", path: "prompts/pr-loop-analyzer-subagent.md" },
 
 	repos: ["example-repo"],
+
+	// Fills the {{...}} placeholders this prompt reads. Rendering fails if one is missing.
+	values: {
+		timezone: exampleRepoValues.timezone,
+		trackerParentIssue: exampleRepoValues.trackerParentIssue,
+		trackerProjectKey: exampleRepoValues.trackerProjectKey,
+	},
 	// Spawned by /fix-pr-comments at its round cap, not pressed by an operator.
 	// Recorded as direct anyway so the disabled reason is what the UI prints:
 	// "only runs as a child" would imply it is merely unreachable from here,

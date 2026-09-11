@@ -13,6 +13,7 @@
  */
 
 import type { AgentManifest } from "@arnold/core";
+import { exampleRepoValues } from "./values.js";
 
 export const manifest: AgentManifest = {
 	id: "pr-loop-analyzer",
@@ -23,6 +24,11 @@ export const manifest: AgentManifest = {
 	prompt: { kind: "console", path: "prompts/pr-loop-analyzer.md" },
 
 	repos: ["example-repo"],
+
+	// Fills the {{...}} placeholders this prompt reads. Rendering fails if one is missing.
+	values: {
+		timezone: exampleRepoValues.timezone,
+	},
 	invocable: "direct",
 
 	args: [

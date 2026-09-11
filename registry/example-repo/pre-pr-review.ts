@@ -11,6 +11,7 @@
  */
 
 import type { AgentManifest } from "@arnold/core";
+import { exampleRepoValues } from "./values.js";
 
 export const manifest: AgentManifest = {
 	id: "pre-pr-review",
@@ -21,6 +22,11 @@ export const manifest: AgentManifest = {
 	prompt: { kind: "console", path: "prompts/pre-pr-review.md" },
 
 	repos: ["example-repo"],
+
+	// Fills the {{...}} placeholders this prompt reads. Rendering fails if one is missing.
+	values: {
+		defaultBranch: exampleRepoValues.defaultBranch,
+	},
 	invocable: "direct",
 
 	// Phase 4 registers the mutating agents; Phase 3 is what makes them safe to

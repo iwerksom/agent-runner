@@ -16,6 +16,7 @@
  */
 
 import type { AgentManifest } from "@arnold/core";
+import { exampleRepoValues } from "./values.js";
 
 export const manifest: AgentManifest = {
 	id: "plan-week",
@@ -26,6 +27,15 @@ export const manifest: AgentManifest = {
 	prompt: { kind: "console", path: "prompts/plan-week.md" },
 
 	repos: ["example-repo"],
+
+	// Fills the {{...}} placeholders this prompt reads. Rendering fails if one is missing.
+	values: {
+		defaultBranch: exampleRepoValues.defaultBranch,
+		timezone: exampleRepoValues.timezone,
+		trackerParentIssue: exampleRepoValues.trackerParentIssue,
+		trackerProjectKey: exampleRepoValues.trackerProjectKey,
+		workingHours: exampleRepoValues.workingHours,
+	},
 	invocable: "direct",
 
 	args: [

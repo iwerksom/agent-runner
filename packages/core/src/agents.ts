@@ -137,6 +137,20 @@ export type AgentManifest = {
 	 * shape of it is declared.
 	 */
 	contextTemplate?: string;
+	/**
+	 * Constants for the `{{name}}` placeholders in the prompt BODY: the repo's
+	 * default branch, its tracker key, a timezone. Not arguments — nobody types
+	 * these per run, they are facts about the repo this manifest binds the agent
+	 * to, and `registry/<slug>/` is already per-repo, so this map is the binding.
+	 *
+	 * Genericizing the prompts replaced every hard-coded per-repo value with a
+	 * placeholder and left nothing to fill them, so `plan-week` would have handed
+	 * the model a literal `{{defaultBranch}}`. Rendering now fails loudly on an
+	 * unfilled one rather than blanking it: `git diff {{defaultBranch}}...HEAD`
+	 * with the placeholder stripped becomes `git diff ...HEAD`, which runs, means
+	 * something else, and costs a full run to discover.
+	 */
+	values?: Record<string, string>;
 	/** Repo slugs this agent applies to, or ["*"]. */
 	repos: string[];
 	invocable: "direct" | "child";

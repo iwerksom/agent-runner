@@ -18,6 +18,7 @@
  */
 
 import type { AgentManifest } from "@arnold/core";
+import { exampleRepoValues } from "./values.js";
 
 export const manifest: AgentManifest = {
 	id: "fix-pr-comments",
@@ -28,6 +29,12 @@ export const manifest: AgentManifest = {
 	prompt: { kind: "console", path: "prompts/fix-pr-comments.md" },
 
 	repos: ["example-repo"],
+
+	// Fills the {{...}} placeholders this prompt reads. Rendering fails if one is missing.
+	values: {
+		trackerParentIssue: exampleRepoValues.trackerParentIssue,
+		trackerProjectKey: exampleRepoValues.trackerProjectKey,
+	},
 	invocable: "direct",
 
 	// The widest scope registered: it pushes, comments on PRs and resolves threads.

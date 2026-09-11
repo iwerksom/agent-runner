@@ -281,6 +281,34 @@ function fillContextTemplate(
 	return filled.replace(LEFTOVER_TEMPLATE_RE, "");
 }
 
+/**
+ * Fill the prompt body's `{{name}}` placeholders from the manifest's `values`
+ * map, then refuse to render if any remain.
+ *
+ * Unfilled placeholders are an error, not something to blank. `contextTemplate`
+ * strips its leftovers because an absent optional argument legitimately renders
+ * as nothing there; a body placeholder is different. It is a repo constant the
+ * manifest was supposed to supply, and stripping it silently rewrites the
+ * instruction — `git diff {{defaultBranch}}...HEAD` becomes `git diff ...HEAD`,
+ * which is still a valid command meaning something else. Failing here costs a
+ * render; failing later costs a whole run and produces a plausible wrong answer.
+ */
+function fillManifestValues(body: string, manifest: Pick<AgentManifest, "id" | "values">): string {
+	let filled = body;
+	for (const [name, value] of Object.entries(manifest.values ?? {})) {
+		filled = filled.replaceAll(`{{${name}}}`, value);
+	}
+
+	const leftover = [...new Set(filled.match(LEFTOVER_TEMPLATE_RE) ?? [])];
+	if (leftover.length > 0) {
+		throw new ValidationError(
+			`agent ${manifest.id}: the prompt body still contains ${leftover.join(", ")} after rendering. Add ${leftover.length === 1 ? "it" : "them"} to the manifest's \`values\` map — these are per-repo constants, so the value belongs to this repo's manifest, not to the prompt.`,
+			{ agentId: manifest.id, unfilledPlaceholders: leftover },
+		);
+	}
+	return filled;
+}
+
 function substituteSlot(body: string, spec: ArgSpec, value: string | undefined): string {
 	const shape = classifySlot(spec.slot);
 	switch (shape.slotKind) {
@@ -328,6 +356,7 @@ export async function renderPrompt(
 		body = substituteSlot(body, spec, resolved[spec.name]);
 	}
 	body = body.replaceAll("$ARGUMENTS", assembleArgumentLine(manifest, args));
+	body = fillManifestValues(body, manifest);
 
 	if (manifest.contextTemplate !== undefined && manifest.contextTemplate !== "") {
 		const context = fillContextTemplate(manifest.contextTemplate, manifest, resolved);
