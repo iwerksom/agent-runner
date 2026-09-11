@@ -6,9 +6,11 @@
 
 import type { AgentManifest } from "@arnold/core";
 import { exampleRepoManifests } from "./example-repo/index.js";
+import { ledtraadManifests } from "./ledtraad/index.js";
 
 export const registryManifestsBySlug: Record<string, AgentManifest[]> = {
 	"example-repo": exampleRepoManifests,
+	ledtraad: ledtraadManifests,
 };
 
 /** Empty array for an unknown slug: a repo with no registered agents is valid. */
