@@ -8,17 +8,18 @@
  * a request-time render, which costs nothing here: every page already declares
  * `dynamic = "force-dynamic"`.
  *
- * The layout is not given search params, so it can only resolve the cookie half
- * of the selection. `RepoSwitcher` reconciles `?repo=` on the client, which is
- * the one place both halves are visible.
+ * The layout is not given search params, so it can only read the cookie half of
+ * the selection, and it passes that through unvalidated. `RepoSwitcher` applies
+ * the shared rule on the client, where both halves are visible at once —
+ * validating here too would be a second copy of that rule, and those two
+ * disagreeing is precisely the bug the shared rule exists to close.
  */
 
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { cookies } from "next/headers";
 import { Nav } from "@/components/Nav";
 import { fetchRepos } from "@/components/api";
-import { REPO_SELECTION_COOKIE } from "@/lib/repoSelection";
+import { readRememberedRepoSlug } from "@/lib/repoSelection";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -29,13 +30,7 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-	const [repos, cookieStore] = await Promise.all([fetchRepos(), cookies()]);
-
-	// A remembered slug that no longer resolves — archived, deleted, or a cookie
-	// older than the last reseed — is dropped rather than shown, so the switcher
-	// never names a repo the console cannot open.
-	const remembered = cookieStore.get(REPO_SELECTION_COOKIE)?.value;
-	const selectedSlug = repos.some((repo) => repo.slug === remembered) ? remembered : undefined;
+	const [repos, remembered] = await Promise.all([fetchRepos(), readRememberedRepoSlug()]);
 
 	return (
 		<html lang="en" className="dark">
@@ -43,9 +38,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
 				<Providers>
 					<Nav
 						navRepos={repos}
-						{...(selectedSlug === undefined
-							? {}
-							: { navSelectedRepoSlug: selectedSlug })}
+						{...(remembered === undefined ? {} : { navSelectedRepoSlug: remembered })}
 					/>
 					<main className="mx-auto w-full max-w-main-wrapper px-4 py-6 md:px-6 md:py-8">
 						{children}

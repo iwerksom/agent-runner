@@ -16,9 +16,9 @@
 
 import { useCallback, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ALL_REPOS } from "@/lib/repoSelectionRule";
 
-/** The sentinel the switcher submits for "every repo". */
-export const ALL_REPOS = "all";
+export { ALL_REPOS };
 
 export function useRepoSelection(): {
 	repoSelectionPending: boolean;

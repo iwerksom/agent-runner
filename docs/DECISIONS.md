@@ -216,6 +216,22 @@ reads the consequence rather than discovering it. Core enforces the rule and the
 API defaults `mode` to `archive`, so a caller that forgets the parameter cannot
 destroy history by omission.
 
+The plan alone is not the guard. It is computed for a dialog, so by the time the
+button is pressed it is seconds old and dispatch may have created a run in the
+gap. Three layers, because the failure is silent and unrecoverable — a detached
+run cannot be re-attached, only guessed at:
+
+1. The preflight plan, which is what the operator reads.
+2. A re-read of the count inside the `deleteRepo` transaction.
+3. `Run.repo` declared `onDelete: Restrict`, so the database refuses even if both
+   checks above were raced. The resulting `P2003` is translated into the same
+   operator-facing message as a blocked delete.
+
+Archiving is enforced in the same place runs begin, not only in the UI that stops
+offering the repo: `dispatchRun` rejects a repo with a non-null `archivedAt`.
+A schedule, a direct `POST /api/runs`, or any later executor never sees the
+switcher, so the refusal has to live at the boundary every dispatch crosses.
+
 The same reasoning is why the slug is immutable after creation. Manifests name
 their repo by slug and `registry/<slug>/` is a real directory; a rename in the
 console would orphan every manifest pointing at it and leave the directory
@@ -243,6 +259,21 @@ without the param. The root layout can only see the cookie — layouts are not
 given search params — so `RepoSwitcher` reconciles the two on the client, which
 is the one place both are visible.
 
+The reconciliation is **one function in `lib/repoSelectionRule.ts`**, applied by
+the server page and the client switcher, and the module deliberately imports
+nothing server-only so both can. Two copies drifted apart the first time: the
+page treated an unknown `?repo=` slug as authoritative and fell back to all
+repos, while the switcher ignored it and displayed the cookie — so a stale shared
+link listed every repo while the control claimed one was selected. A control that
+misreports the scope is worse than no control.
+
+An explicit slug that cannot be honoured therefore resolves to "all repos" and
+says so; it never silently reverts to whatever this browser remembers. For the
+same reason the nav carries `?repo=` across links: a bare destination path would
+re-resolve from the cookie, turning a shared scoped link into a different repo on
+the first click. Only `repo` travels — a status filter means nothing on a screen
+that has none.
+
 ## 18. Never name an App Router folder with a leading underscore
 
 `/api/repos/_probe` and `/api/repos/_selection` were the first attempt at keeping
@@ -257,3 +288,23 @@ A method error for a route that exists, on a path that does not.
 
 Both now live as siblings of `/api/repos` — `/api/repo-probe` and
 `/api/repo-selection` — which cannot collide with a slug at all.
+
+## 19. Changing a repo's clone source throws away its mirror
+
+The bare mirror is cloned once and keyed by slug, and `ensureMirror` refreshes an
+existing one by fetching _its own_ origin. So editing a repo's `localPath` or
+`remoteUrl` used to be recorded and then ignored: the row named the new source
+while every subsequent run kept executing the old one.
+
+That is the worst shape a bug can take here. Nothing errors, runs keep succeeding,
+artifacts keep being collected — against code nobody pointed at, with a
+provenance record that names the wrong source.
+
+So a source change calls `discardRepoWorkspaces`, which removes the mirror and
+every worktree derived from it, on disk and in the database, and the next lease
+re-clones. It refuses while any workspace is leased, and the discard happens
+_before_ the row is written: if the mirror cannot be rebuilt now, the edit must
+not land either, or the row and the disk disagree again in the other direction.
+
+Name and branch edits do not trigger it. Only the two fields that decide where
+the code comes from.

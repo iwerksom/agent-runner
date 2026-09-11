@@ -24,11 +24,12 @@
  */
 
 import { execFile } from "node:child_process";
-import { access, stat } from "node:fs/promises";
+import { access, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { prisma } from "./db.js";
 import { NotFoundError, ValidationError } from "./errors.js";
+import { discardRepoWorkspaces } from "./workspace.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -143,15 +144,30 @@ export async function probeCheckout(
 		return probe;
 	}
 
-	// A worktree checkout has `.git` as a file, not a directory, so presence is
-	// what is tested rather than type.
-	probe.isGitCheckout = await pathExists(path.join(probedPath, ".git"));
-	if (!probe.isGitCheckout) {
+	// git is asked, not the filesystem. A `.git` entry proves nothing: a stale
+	// gitfile pointing at a directory that is gone, a half-copied checkout, or a
+	// `.git` the process cannot read all look identical to `stat` and all fail
+	// later inside `git clone --bare`, which is exactly what this probe exists to
+	// prevent.
+	const gitDir = await gitOutput(probedPath, ["rev-parse", "--git-dir"]);
+	if (gitDir === undefined) {
 		probe.blockers.push(
-			`${probedPath} is not a git checkout. Arnold mirrors the repo and adds a worktree per run, both of which need git metadata.`,
+			`git does not recognise ${probedPath} as a repository. Arnold mirrors the repo and adds a worktree per run, both of which need usable git metadata.`,
 		);
 		return probe;
 	}
+
+	// `rev-parse` walks upwards, so a plain directory nested inside a checkout
+	// answers for its parent. Registering that would mirror the parent while the
+	// row claims the subdirectory, so the toplevel has to be the path itself.
+	const topLevel = await gitOutput(probedPath, ["rev-parse", "--show-toplevel"]);
+	if (topLevel !== undefined && !(await sameDirectory(topLevel, probedPath))) {
+		probe.blockers.push(
+			`${probedPath} is inside the git checkout at ${topLevel}, but is not its root. Point Arnold at ${topLevel} instead.`,
+		);
+		return probe;
+	}
+	probe.isGitCheckout = true;
 
 	const branch = await gitOutput(probedPath, ["rev-parse", "--abbrev-ref", "HEAD"]);
 	if (branch !== undefined && branch !== "HEAD") probe.detectedBranch = branch;
@@ -169,6 +185,19 @@ export async function probeCheckout(
 	}
 
 	return probe;
+}
+
+/**
+ * Whether two paths name the same directory, resolving symlinks first. Needed
+ * because git reports its own resolved path, and on macOS and in WSL that
+ * routinely differs textually from what the operator typed.
+ */
+async function sameDirectory(left: string, right: string): Promise<boolean> {
+	try {
+		return (await realpath(left)) === (await realpath(right));
+	} catch {
+		return path.resolve(left) === path.resolve(right);
+	}
 }
 
 /** Rejects anything that would break `registry/<slug>/` or a URL path segment. */
@@ -253,6 +282,15 @@ export async function createRepo(input: RepoInput): Promise<{ slug: string }> {
  * slug and `registry/<slug>/` is a directory on disk, so renaming one here would
  * orphan every manifest that points at it. Delete and re-add is the honest path,
  * and it forces the registry directory to be renamed too.
+ *
+ * Changing where the code comes from is not an ordinary field edit. The bare
+ * mirror is cloned once and keyed by slug, and `ensureMirror` refreshes it by
+ * fetching its own origin — so a new `localPath` or `remoteUrl` would be
+ * recorded and then ignored, and every later run would execute the old source
+ * while the console showed the new one. Runs would keep succeeding, against code
+ * nobody pointed at. So a source change discards the mirror and every worktree
+ * derived from it, and the next lease re-clones. That is refused while any
+ * workspace is leased, which surfaces as a WorkspaceError naming the count.
  */
 export async function updateRepo(slug: string, patch: RepoPatch): Promise<{ slug: string }> {
 	const existing = await prisma.repo.findUnique({ where: { slug } });
@@ -269,6 +307,14 @@ export async function updateRepo(slug: string, patch: RepoPatch): Promise<{ slug
 	await validateRepoInput(merged);
 
 	const { slug: _slug, ...fields } = repoFieldsOf(merged);
+	const sourceChanged =
+		fields.localPath !== existing.localPath || fields.remoteUrl !== existing.remoteUrl;
+
+	// Discard before the write. If the mirror cannot be rebuilt right now the
+	// edit must not land either, or the row and the disk disagree — which is the
+	// exact state this is here to prevent.
+	if (sourceChanged) await discardRepoWorkspaces(slug);
+
 	const updated = await prisma.repo.update({ where: { slug }, data: fields });
 	return { slug: updated.slug };
 }
@@ -352,8 +398,31 @@ export async function unarchiveRepo(slug: string): Promise<{ slug: string }> {
 }
 
 /**
- * Removes a repo permanently. Only legal while `planRepoRemoval` says it is:
- * a repo that has ever run something is archived, never deleted.
+ * The error a blocked delete produces, wherever it was detected. One message for
+ * the preflight plan and for the database's own refusal, so an operator who
+ * loses the race reads the same sentence as one who never started it.
+ */
+function blockedDeleteError(slug: string, blockers: string[]): ValidationError {
+	return new ValidationError(
+		blockers.length > 0
+			? blockers.join(" ")
+			: `"${slug}" cannot be deleted because something still references it. Archive it instead.`,
+		{ slug, blockers },
+	);
+}
+
+/**
+ * Removes a repo permanently. Only legal while nothing references it: a repo
+ * that has ever run something is archived, never deleted.
+ *
+ * The count is re-read inside a transaction rather than trusted from
+ * `planRepoRemoval`. Dispatch can create a run between the plan and the delete,
+ * and the plan is computed for a dialog — by the time the operator presses the
+ * button it is seconds old. `Run.repo` is additionally declared `onDelete:
+ * Restrict`, so even if both checks were wrong the database refuses rather than
+ * nulling `repoId`; that refusal is caught and reported as the same blocked
+ * delete. Belt, braces, and a third thing, because the failure is silent and
+ * unrecoverable: a detached run cannot be re-attached, only guessed at.
  *
  * `AgentRepo` and `Workspace` rows cascade. The worktree directories those
  * `Workspace` rows describe are NOT removed here — that is the workspace pool's
@@ -362,13 +431,39 @@ export async function unarchiveRepo(slug: string): Promise<{ slug: string }> {
  */
 export async function deleteRepo(slug: string): Promise<{ slug: string; workspaceCount: number }> {
 	const plan = await planRepoRemoval(slug);
-	if (!plan.canDelete) {
-		throw new ValidationError(plan.deleteBlockers.join(" "), {
-			slug,
-			blockers: plan.deleteBlockers,
-		});
-	}
+	if (!plan.canDelete) throw blockedDeleteError(slug, plan.deleteBlockers);
 
-	await prisma.repo.delete({ where: { slug } });
-	return { slug, workspaceCount: plan.workspaceCount };
+	try {
+		return await prisma.$transaction(async (tx) => {
+			const repoRow = await tx.repo.findUnique({
+				where: { slug },
+				include: { _count: { select: { runs: true, workspaces: true } } },
+			});
+			if (repoRow === null) throw new NotFoundError(`no repo "${slug}"`, { slug });
+
+			if (repoRow._count.runs > 0) {
+				throw blockedDeleteError(slug, [
+					`A run was recorded against "${slug}" while this deletion was being confirmed, so it was not deleted. Archive it instead.`,
+				]);
+			}
+			const busy = await tx.workspace.count({
+				where: { repoId: repoRow.id, state: { in: ["leased", "destroying"] } },
+			});
+			if (busy > 0) {
+				throw blockedDeleteError(slug, [
+					`A workspace for "${slug}" was leased while this deletion was being confirmed, so it was not deleted.`,
+				]);
+			}
+
+			await tx.repo.delete({ where: { slug } });
+			return { slug, workspaceCount: repoRow._count.workspaces };
+		});
+	} catch (caught: unknown) {
+		// Prisma reports a refused foreign key as P2003. Reaching this means both
+		// checks above were raced, which should be impossible — but "impossible"
+		// is how the detached runs in this database happened.
+		const code = (caught as { code?: unknown } | null)?.code;
+		if (code === "P2003") throw blockedDeleteError(slug, []);
+		throw caught;
+	}
 }

@@ -26,6 +26,7 @@ import { RegistrySyncButton } from "@/components/RegistrySyncButton";
 import { fetchAgents, fetchRepos } from "@/components/api";
 import { formatCostUsd } from "@/components/format";
 import { resolveRepoSelection } from "@/lib/repoSelection";
+import { ALL_REPOS, withRepoParam } from "@/lib/repoSelectionRule";
 import type { AgentSummary, RepoDto } from "@/components/types";
 
 export const dynamic = "force-dynamic";
@@ -99,7 +100,7 @@ export default async function AgentsPage({
 
 					{selectedRepo ? (
 						<Link
-							href="/?repo=all"
+							href={withRepoParam("/", resolvedParams, ALL_REPOS)}
 							className="rounded-medium border border-default-200 px-3 py-2 text-xs text-default-500 transition-colors hover:text-foreground"
 						>
 							Scoped to <span className="font-mono">{selectedRepo.slug}</span> · show

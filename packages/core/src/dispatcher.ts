@@ -70,6 +70,16 @@ export async function dispatchRun(input: DispatchRunInput): Promise<DispatchRunR
 	if (repoRow === null) {
 		throw new NotFoundError(`no repo "${repoSlug}"`, { repoSlug });
 	}
+	// Archiving a repo has to mean something here, not only in the switcher that
+	// stops offering it. This route is reachable directly, and a schedule or an
+	// API caller never sees the UI at all — so the refusal belongs at the one
+	// boundary every dispatch passes through.
+	if (repoRow.archivedAt !== null) {
+		throw new ValidationError(
+			`repo "${repoSlug}" is archived, so no new run can be dispatched against it. Restore it from the repos page first.`,
+			{ repoSlug, archivedAt: repoRow.archivedAt.toISOString() },
+		);
+	}
 
 	// Throws ValidationError listing what is missing or mistyped.
 	const resolvedArgs = validateArgs(agentManifest, args);

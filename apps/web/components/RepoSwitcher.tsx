@@ -26,12 +26,13 @@
 
 import { ChevronDown, FolderGit2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { ALL_REPOS, useRepoSelection } from "@/hooks/useRepoSelection";
+import { useRepoSelection } from "@/hooks/useRepoSelection";
+import { ALL_REPOS, resolveRepoSelectionRule } from "@/lib/repoSelectionRule";
 import type { RepoDto } from "@/components/types";
 
 export function RepoSwitcher({
 	repoSwitcherRepos,
-	/** Resolved from the cookie by the layout, which cannot see search params. */
+	/** The raw remembered slug from the layout, which cannot see search params. */
 	repoSwitcherSelectedSlug,
 }: {
 	repoSwitcherRepos: RepoDto[];
@@ -45,18 +46,16 @@ export function RepoSwitcher({
 	// empty console. The repos page is where that state gets explained.
 	if (repoSwitcherRepos.length === 0) return undefined;
 
-	// `?repo=` outranks the cookie, matching lib/repoSelection.ts. The layout is
-	// not given search params, so this is the only place the two can be
-	// reconciled — without it, landing on a `?repo=` link would show the page
-	// scoped to one repo and the switcher naming another.
-	const fromUrl = searchParams?.get("repo") ?? undefined;
-	const urlSelection =
-		fromUrl === undefined
-			? undefined
-			: fromUrl === ALL_REPOS || repoSwitcherRepos.some((repo) => repo.slug === fromUrl)
-				? fromUrl
-				: undefined;
-	const selectedKey = urlSelection ?? repoSwitcherSelectedSlug ?? ALL_REPOS;
+	// The same rule the page ran, on the same inputs, so the two cannot disagree.
+	// The layout is not given search params, so this is the only place where both
+	// the URL and the cookie are visible at once. Applying it here is what stops a
+	// stale `?repo=` link listing every repo while the switcher names one.
+	const resolution = resolveRepoSelectionRule(
+		repoSwitcherRepos.map((repo) => repo.slug),
+		searchParams?.get("repo") ?? undefined,
+		repoSwitcherSelectedSlug,
+	);
+	const selectedKey = resolution.selectedSlug ?? ALL_REPOS;
 
 	return (
 		<div className="flex items-center gap-2">

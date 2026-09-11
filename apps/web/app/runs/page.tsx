@@ -21,6 +21,7 @@ import { RunTable } from "@/components/RunTable";
 import { fetchRepos, fetchRuns } from "@/components/api";
 import { formatCostUsd } from "@/components/format";
 import { resolveRepoSelection } from "@/lib/repoSelection";
+import { ALL_REPOS, withRepoParam } from "@/lib/repoSelectionRule";
 import { RUN_STATUSES, type RunStatus } from "@/components/types";
 
 export const dynamic = "force-dynamic";
@@ -76,7 +77,9 @@ export default async function RunsPage({
 
 					{selectedRepo ? (
 						<Link
-							href="/runs?repo=all"
+							// Built from the current parameters, not hard-coded: widening
+							// the repo scope must not also drop an active status filter.
+							href={withRepoParam("/runs", resolved, ALL_REPOS)}
 							className="rounded-medium border border-default-200 px-3 py-2 text-xs text-default-500 transition-colors hover:text-foreground"
 						>
 							Scoped to <span className="font-mono">{selectedRepo.slug}</span> · show
