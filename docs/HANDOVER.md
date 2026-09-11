@@ -3,8 +3,17 @@
 State of the project as of the last working session. Written for whoever picks
 this up next, including a future you with no memory of building it.
 
-If you read only one thing: **Phase 0 is code complete and has never completed a
-real agent run.** Everything below is either verified, or honestly marked as not.
+If you read only one thing: **Phase 0 completed five real agent runs in August
+2026, and nothing has run since the genericization.** Everything below is either
+verified, or honestly marked as not.
+
+> **Correction, 2026-09-09.** Earlier versions of this file said Arnold "has
+> never completed a real agent run" and that "the database has zero `Run` rows".
+> Both were wrong. `packages/core/prisma/arnold.db` holds five successful runs
+> from 13–14 August 2026 — $2.98 of real spend, 1.6M tokens, 344 persisted
+> events, one collected artifact still on disk at
+> `.arnold/artifacts/*/PR-507-20260813-1445.md`. The claim appears to have been
+> carried forward from before those runs happened and never rechecked.
 
 ---
 
@@ -52,7 +61,7 @@ else reads from it.
 - **Monorepo scaffold**: pnpm workspaces, `@arnold/core` + `@arnold/web`,
   Next 16 App Router, React 19, HeroUI 2.8, Tailwind 4, Prisma 6 on SQLite,
   Agent SDK pinned exactly at `0.3.228`.
-- **Production build passes.** All 14 routes compile, TypeScript clean.
+- **Production build passes.** All 19 routes compile, TypeScript clean.
 - **Prompt rendering works against real prompt files.** `pnpm smoke <checkout>`
   renders every registered agent and asserts every substitution landed:
   positionals, `${1:-default}` forms, flag args, the literal `<PR>` token, and
@@ -64,37 +73,63 @@ else reads from it.
 - **Seed and registry sync work.** Seeding produces one repo row, seven agent
   rows, one operator user. Agents found without a manifest overlay appear as
   `unregistered` and are not runnable.
+- **Repos are managed from the console.** `/repos` adds, edits, archives,
+  restores and deletes target repositories; the switcher in the nav scopes the
+  Agents and Runs screens to one of them. Verified against a real checkout over
+  HTTP: the probe detects branch and remote and refuses a path that is not a git
+  checkout, a duplicate slug and a malformed slug are both rejected with the
+  reason, archive round-trips, and a repo with a run row refuses deletion.
+  `TARGET_REPO_*` now seeds the first row only.
 - **The Run modal works end to end** — verified in a real browser with a stubbed
   dispatcher: modal opens, required-argument gating behaves, submit POSTs the
   right body, modal closes, navigates to the run page.
 - **RSC boundary guard**: `pnpm check:rsc` fails the build if a Server Component
   renders a HeroUI component that introspects its children. Tested both ways.
 
-### Built but never executed
+### Executed once, against a repo that no longer exists
 
-**No agent has ever actually run.** The database has zero `Run` rows. Everything
-downstream of `dispatchRun` creating that row is written, typechecked, and
-unproven:
+Five runs succeeded on 13–14 August 2026 against the previous target repo. They
+exercised the whole path that the rest of this file used to call unproven:
 
-- workspace lease (mirror clone, worktree add, prime, state-path check)
-- the SDK `query()` loop and its adapter
-- live SSE streaming of real events
-- artifact collection and outcome parsing
-- provenance recording and ledger updates
-- workspace release, and dirty-worktree destruction
+| Agent             | Cost  | Turns | Events | Outcome rows | Artifacts |
+| ----------------- | ----- | ----- | ------ | ------------ | --------- |
+| work-order-scoper | $0.56 | 13    | 80     | 1            | 0         |
+| pr-loop-analyzer  | $0.74 | 14    | 74     | 1            | 1         |
+| plan-week         | $0.67 | 16    | 71     | 1            | 0         |
+| plan-week         | $0.55 | 14    | 62     | 1            | 0         |
+| work-order-scoper | $0.47 | 11    | 57     | 1            | 0         |
 
-That is the single most valuable thing to do next.
+So the workspace lease, the SDK `query()` loop and its adapter, event
+persistence, outcome parsing, provenance recording and the ledger all did work at
+least once, and artifact collection produced a real 8.6 KB report that is still
+in the artifact store.
+
+**What is unproven is the current tree, which is not the tree that ran.** The
+Aug 29–30 genericization changed how console-owned prompts resolve and replaced
+every per-repo value in the eight prompts with `{{placeholders}}` that nothing
+fills. Nothing has run since. Treat the list above as evidence the design works,
+not as evidence this checkout works.
+
+All five rows have `repoId = null`: the repo they ran against was deleted, and
+because `Run.repoId` is nullable that silently detached them rather than failing.
+They are the worked example for DECISIONS #16, and the reason a repo with runs
+can now only be archived.
+
+Getting one run to succeed on the current tree is still the single most valuable
+thing to do next. Start with the placeholders — see the smoke failure below.
 
 ### Known broken or unfinished
 
-| Thing                                                    | Detail                                                                                                                                                   |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No auth                                                  | Phase 3. Anyone reaching the port can trigger any agent.                                                                                                 |
-| Mutating agents registered without gating                | All seven reference manifests are registered, including `draft-pr` and `external-writes` tiers. The manifests exist; the role checks they assume do not. |
-| `awaiting_input` is terminal                             | An agent that stops to ask parks with the question preserved and no way to answer. Phase 4.                                                              |
-| No guarded-push helper                                   | Two manifests declare `mainBookkeeping`; the helper that validates the staged diff against declared globs is not written.                                |
-| `pre-pr-review` has no structured outcome                | It prints a summary and writes no file, so its runs show a transcript and a cost but nothing chartable.                                                  |
-| The reference registry points at a repo you may not have | `registry/example-repo/` describes agents from one specific project. Keep them as worked examples; add your own directory.                               |
+| Thing                                                    | Detail                                                                                                                                                                                                       |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| No auth                                                  | Phase 3. Anyone reaching the port can trigger any agent — and now also register a repo, which names a host path Arnold will clone. Keep it on localhost.                                                     |
+| Mutating agents registered without gating                | All seven reference manifests are registered, including `draft-pr` and `external-writes` tiers. The manifests exist; the role checks they assume do not.                                                     |
+| `awaiting_input` is terminal                             | An agent that stops to ask parks with the question preserved and no way to answer. Phase 4.                                                                                                                  |
+| No guarded-push helper                                   | Two manifests declare `mainBookkeeping`; the helper that validates the staged diff against declared globs is not written.                                                                                    |
+| `pre-pr-review` has no structured outcome                | It prints a summary and writes no file, so its runs show a transcript and a cost but nothing chartable.                                                                                                      |
+| 50 unfilled `{{placeholders}}` in the prompts            | `pnpm smoke <checkout>` fails `no unfilled {{placeholders}} remain`. `renderPrompt` fills `contextTemplate` only; a prompt **body** keeps its `{{defaultBranch}}` verbatim. Blocks a first run on this tree. |
+| Five runs detached from their repo                       | `repoId` is null on every historical run because the old repo row was deleted. Not recoverable; DECISIONS #16 stops it recurring.                                                                            |
+| The reference registry points at a repo you may not have | `registry/example-repo/` describes agents from one specific project. Keep them as worked examples; add your own directory.                                                                                   |
 
 ---
 
@@ -102,10 +137,13 @@ That is the single most valuable thing to do next.
 
 In order. Each step is small and each one de-risks the next.
 
-1. **Point it at a repo you actually have.** Set `TARGET_REPO_PATH` in
-   `.env.local` to a local checkout with a `.claude/` directory, and
-   `TARGET_REPO_REMOTE` to its remote. Run `pnpm seed`. Registry sync will list
-   its commands as `unregistered`.
+1. **Point it at a repo you actually have.** Open `/repos`, press Add
+   repository, and give it a local checkout with a `.claude/` directory. The path
+   is probed as you type, so a typo is caught here rather than at lease time.
+   Then press Sync registry on the new row: it will list that repo's commands as
+   `unregistered`. (`TARGET_REPO_PATH` in `.env.local` plus `pnpm seed` still
+   works and is what an empty database needs, since there is no UI to add a row
+   to a database with no rows.)
 2. **Write one manifest for one read-only agent of your own**, copying the shape
    of `registry/example-repo/work-order-scoper.ts`. Narrow `Bash` to the exact
    invocations its prompt runs.
