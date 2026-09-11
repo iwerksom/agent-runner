@@ -121,17 +121,33 @@ worktree pool gets proper leasing and dirty-destroy semantics.
 
 ---
 
-## Story: Phase 2, registry sync and run trees
+## Story: Phase 2, registry sync, repo management and run trees
 
 Registry sync with `unregistered` / `orphaned` states and argument-drift
-warnings. Subagent and harness child runs with cost roll-up. Register
+warnings. Target repositories managed from the console rather than the
+environment. Subagent and harness child runs with cost roll-up. Register
 `ai-smell-runner.py` as the first `harness` agent. Outcome parsing for the JSONL
 streams the agents already write, and the first outcome-mix chart.
+
+Repo management and the repo switcher were delivered early, during Phase 0, at
+the maintainer's request. The remaining work on them is the admin gating in
+Phase 3, not the screens.
 
 **Acceptance criteria**
 
 - Adding a command to `.claude/commands/` and hitting sync makes it appear as
   `unregistered` with no console code change.
+- DONE. A repo is registered, edited and retired from the console, with no edit
+  to `.env.local` and no re-run of `pnpm seed`.
+- DONE. A candidate checkout is probed before it is accepted: a path that does
+  not exist or is not a git checkout is refused at registration time with the
+  reason, rather than failing inside a workspace lease minutes into a run.
+- DONE. A repo that any run references cannot be deleted, only archived, so a
+  tidy-up cannot null out the provenance the Notary recorded.
+- DONE. The console is scoped to one repo, or to all of them, from a switcher in
+  the nav, and the choice survives navigating between Agents and Runs.
+- A repo registered with no `registry/<slug>/` directory reports why it has no
+  agents, rather than rendering as an empty group.
 - Deleting a prompt file marks its agent `orphaned`, disables the Run button, and
   preserves run history.
 - An `argument-hint` that stops matching the manifest's positional args raises a
@@ -161,6 +177,10 @@ push. Audit trail on every run.
   its environment, so the tool policy and the environment both refuse.
 - Registering an agent, raising its write scope, or granting `mainBookkeeping`
   requires admin.
+- Registering, editing or removing a repo requires admin. This is the widest
+  unauthenticated capability in the console today: a repo row names a filesystem
+  path Arnold will clone and run agents against, so until this lands the console
+  must not be exposed beyond localhost.
 - Every run records who triggered it.
 - The guarded-push helper refuses a `mainBookkeeping` push whose staged diff
   touches a path outside the declared globs, or whose commit message lacks
@@ -221,7 +241,9 @@ calendar route intact. Onboard a second repo to prove the multi-repo model. The
   publishes events back. The enqueue contract does not change; only which
   executor claims the job.
 - `plan-week` runs from the console with capacity source 0 (Chrome) working.
-- A second repo is registered and one agent runs against both.
+- A second repo is registered and one agent runs against both. Registration
+  itself shipped in Phase 2, so what this tests is the manifest half: one agent
+  whose `repos` covers both slugs, running successfully against each.
 - The "needs you" page aggregates every `awaiting_input` run plus the
   `needs-decision` and `undecided-design` reason codes from parked work orders.
 

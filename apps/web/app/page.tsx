@@ -9,17 +9,24 @@
  * declared for `*` appears under every repo, because that is what the manifest
  * means.
  *
+ * The repo switcher in the nav narrows this page to one repo. Grouping is kept
+ * either way: a one-repo view is the same screen with one group, so nothing about
+ * the layout depends on the selection.
+ *
  * The header counts prompt-only enforcement on purpose. That number is a to-do
  * list, not a statistic: every agent in it has a write scope that is currently a
  * sentence in a prompt.
  */
 
 import { Bot, ShieldAlert } from "lucide-react";
+import Link from "next/link";
 import { AgentCard } from "@/components/AgentCard";
 import { EmptyState } from "@/components/EmptyState";
 import { RegistrySyncButton } from "@/components/RegistrySyncButton";
 import { fetchAgents, fetchRepos } from "@/components/api";
 import { formatCostUsd } from "@/components/format";
+import { resolveRepoSelection } from "@/lib/repoSelection";
+import { ALL_REPOS, withRepoParam } from "@/lib/repoSelectionRule";
 import type { AgentSummary, RepoDto } from "@/components/types";
 
 export const dynamic = "force-dynamic";
@@ -57,10 +64,22 @@ function agentsForRepo(agents: AgentSummary[], repoSlug: string): AgentSummary[]
 	);
 }
 
-export default async function AgentsPage() {
-	const [repos, agents] = await Promise.all([fetchRepos(), fetchAgents()]);
+export default async function AgentsPage({
+	searchParams,
+}: {
+	searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+	const resolvedParams = await searchParams;
+	const repos = await fetchRepos();
+	const { selectedRepo, staleSelection } = await resolveRepoSelection(repos, resolvedParams.repo);
 
-	const repoOrder = resolveRepoOrder(repos, agents);
+	// Filtering by slug in the query means an agent declared for `*` is still
+	// included, because loadAgentSummaries applies the same rule the grouping
+	// below does.
+	const agents = await fetchAgents(selectedRepo?.slug);
+
+	const visibleRepos = selectedRepo === undefined ? repos : [selectedRepo];
+	const repoOrder = selectedRepo === undefined ? resolveRepoOrder(repos, agents) : visibleRepos;
 	const promptOnlyCount = agents.filter(
 		(agent) => agent.scopeEnforcement === "prompt-only",
 	).length;
@@ -79,6 +98,16 @@ export default async function AgentsPage() {
 						</p>
 					</div>
 
+					{selectedRepo ? (
+						<Link
+							href={withRepoParam("/", resolvedParams, ALL_REPOS)}
+							className="rounded-medium border border-default-200 px-3 py-2 text-xs text-default-500 transition-colors hover:text-foreground"
+						>
+							Scoped to <span className="font-mono">{selectedRepo.slug}</span> · show
+							all repos
+						</Link>
+					) : undefined}
+
 					{promptOnlyCount > 0 ? (
 						<div className="arnold-unenforced flex items-center gap-2 rounded-medium border border-warning-400 px-3 py-2 text-xs text-warning-600">
 							<ShieldAlert className="h-4 w-4 shrink-0" />
@@ -91,6 +120,13 @@ export default async function AgentsPage() {
 					) : undefined}
 				</div>
 			</header>
+
+			{staleSelection ? (
+				<div className="rounded-medium border border-warning-400 px-3 py-2 text-xs text-warning-600">
+					No active repo with slug <span className="font-mono">{staleSelection}</span>. It
+					may have been archived or removed, so the console is showing every repo instead.
+				</div>
+			) : undefined}
 
 			{agents.length === 0 ? (
 				<EmptyState

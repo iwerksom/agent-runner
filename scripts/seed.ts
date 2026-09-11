@@ -19,8 +19,13 @@ import { disconnectPrisma, prisma, syncRegistry } from "../packages/core/src/ind
  * rather than any real repository.
  *
  * The slug matters beyond display: `registry/<slug>/` is where this repo's
- * manifests are looked up. Change TARGET_repoSlug and you must add a matching
+ * manifests are looked up. Change TARGET_REPO_SLUG and you must add a matching
  * directory under registry/ and register it in registry/index.ts.
+ *
+ * Only the FIRST repo row comes from here. An empty database has no console to
+ * add a row from, so the environment seeds one and `/repos` owns every repo
+ * after that. Re-running seed is still safe: it upserts this one row and
+ * re-syncs, and leaves repos added in the console alone.
  */
 const DEFAULT_SLUG = "example-repo";
 const DEFAULT_NAME = "Example Repo";
@@ -36,7 +41,13 @@ async function main(): Promise<void> {
 	const configuredPath = environmentValue("TARGET_REPO_PATH");
 	const localPath = configuredPath === undefined ? undefined : path.resolve(configuredPath);
 	const remoteUrl = environmentValue("TARGET_REPO_REMOTE") ?? DEFAULT_REMOTE;
-	const repoSlug = environmentValue("TARGET_repoSlug") ?? DEFAULT_SLUG;
+	// `TARGET_repoSlug` is the name this variable shipped with, and it disagreed
+	// with the one .env.example and SETUP-WSL.md documented. Env names are
+	// case-sensitive, so anyone following the docs silently got the default and
+	// the wrong registry directory. The documented name wins; the original is
+	// still read so an existing .env.local does not change meaning on upgrade.
+	const repoSlug =
+		environmentValue("TARGET_REPO_SLUG") ?? environmentValue("TARGET_repoSlug") ?? DEFAULT_SLUG;
 
 	const repoFields = {
 		name: environmentValue("TARGET_REPO_NAME") ?? DEFAULT_NAME,

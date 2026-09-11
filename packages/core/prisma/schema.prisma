@@ -30,6 +30,9 @@ model Repo {
   localPath     String?
   defaultBranch String  @default("main")
   claudeDir     String  @default(".claude")
+  /// Set when a repo with run history is retired. Archived repos keep their runs
+  /// and disappear from the switcher; they are never a target for a new run.
+  archivedAt    DateTime?
 
   agents     AgentRepo[]
   runs       Run[]
@@ -97,7 +100,11 @@ model Run {
   agentId String
   agent   Agent  @relation(fields: [agentId], references: [id])
   repoId  String?
-  repo    Repo?  @relation(fields: [repoId], references: [id])
+  /// Restrict, not the default SetNull: a repo delete must FAIL while any run
+  /// points at it rather than quietly nulling the column and stripping the
+  /// provenance the Notary recorded. The five detached runs already in this
+  /// database are what that looks like. See DECISIONS #16.
+  repo    Repo?  @relation(fields: [repoId], references: [id], onDelete: Restrict)
 
   /// Run tree: harness batches and subagent invocations hang off a parent.
   parentRunId String?

@@ -61,8 +61,12 @@ export type RepoDto = {
 	remoteUrl: string;
 	localPath?: string;
 	defaultBranch: string;
+	/** Where registry sync looks for this repo's own prompt files. */
+	claudeDir: string;
 	agentCount: number;
 	runCount: number;
+	/** ISO timestamp when the repo was retired, absent while it is active. */
+	archivedAt?: string;
 };
 
 export type RunOutcomeDto = {
@@ -164,6 +168,8 @@ export type RepoRowForDto = {
 	remoteUrl: string;
 	localPath: string | null;
 	defaultBranch: string;
+	claudeDir: string;
+	archivedAt: Date | null;
 	_count?: { agents?: number; runs?: number };
 };
 
@@ -294,8 +300,10 @@ export function mapRepo(row: RepoRowForDto): RepoDto {
 		remoteUrl: row.remoteUrl,
 		localPath: row.localPath ?? undefined,
 		defaultBranch: row.defaultBranch,
+		claudeDir: row.claudeDir,
 		agentCount: row._count?.agents ?? 0,
 		runCount: row._count?.runs ?? 0,
+		...(row.archivedAt === null ? {} : { archivedAt: toIso(row.archivedAt) }),
 	};
 }
 

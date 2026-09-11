@@ -13,7 +13,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { Repo } from "@prisma/client";
@@ -309,4 +309,50 @@ export async function releaseWorkspace(workspaceId: string): Promise<void> {
 	console.warn(
 		`[arnold] workspace ${workspaceId} left dirty and kept on disk for inspection: ${row.path}`,
 	);
+}
+
+/**
+ * Throw away every derived checkout for a repo: its bare mirror and all of its
+ * worktrees, on disk and in the database.
+ *
+ * Exists because the mirror is keyed by slug and cloned once. `ensureMirror`
+ * refreshes an existing mirror by fetching *its own* origin, so changing a
+ * repo's `localPath` or `remoteUrl` would otherwise be silently ineffective:
+ * the row would name the new source while every subsequent run kept executing
+ * the old one. That is the worst kind of wrong — runs succeed, against code
+ * nobody pointed at.
+ *
+ * Refuses while anything is leased. Deleting a worktree out from under a
+ * running agent would fail the run somewhere unhelpful, and the caller can
+ * simply ask again once it finishes.
+ *
+ * Idempotent: a repo that has never run has nothing on disk, and removing
+ * nothing is a success.
+ */
+export async function discardRepoWorkspaces(
+	repoSlug: string,
+): Promise<{ removedWorktrees: number }> {
+	const repoRow = await prisma.repo.findUnique({ where: { slug: repoSlug } });
+	if (repoRow === null) return { removedWorktrees: 0 };
+
+	const busy = await prisma.workspace.count({
+		where: { repoId: repoRow.id, state: { in: ["leased", "destroying"] } },
+	});
+	if (busy > 0) {
+		throw new WorkspaceError(
+			`${repoSlug} has ${busy} workspace${busy === 1 ? "" : "s"} in use, so its mirror cannot be rebuilt right now. Wait for those runs to finish, or cancel them, and try again.`,
+			{ repoSlug, busy },
+		);
+	}
+
+	const rows = await prisma.workspace.findMany({ where: { repoId: repoRow.id } });
+	for (const row of rows) {
+		// `force` so a worktree an operator already deleted by hand is not an
+		// error: the goal is "gone", and it is already gone.
+		await rm(row.path, { recursive: true, force: true });
+	}
+	await prisma.workspace.deleteMany({ where: { repoId: repoRow.id } });
+	await rm(mirrorPathFor(repoSlug), { recursive: true, force: true });
+
+	return { removedWorktrees: rows.length };
 }

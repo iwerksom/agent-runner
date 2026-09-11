@@ -144,3 +144,43 @@ export type ApiErrorBody = {
 	code?: string;
 	details?: unknown;
 };
+
+/**
+ * What Arnold found when it looked at a candidate checkout, from
+ * POST /api/repo-probe. Declared here rather than imported from @arnold/core
+ * for the same reason as the manifest sub-types above: the add-repo form is a
+ * client component, and a type import is not worth the risk of the core package
+ * reaching the browser graph.
+ *
+ * `blockers` is the field that decides anything. Empty means the path is usable;
+ * anything in it is a reason registration will be refused, already phrased for
+ * the operator. `warnings` never blocks — a repo with no `.claude` directory is
+ * a legitimate target for console-owned prompts.
+ */
+export type CheckoutProbe = {
+	probedPath: string;
+	exists: boolean;
+	isDirectory: boolean;
+	isGitCheckout: boolean;
+	detectedBranch?: string;
+	detectedRemote?: string;
+	claudeDirPresent: boolean;
+	blockers: string[];
+	warnings: string[];
+};
+
+/**
+ * What removing a repo would cost, from GET /api/repos/[repoSlug]. Read before
+ * the confirmation dialog opens so it can state the consequence rather than ask
+ * for a leap of faith.
+ */
+export type RepoRemovalPlan = {
+	slug: string;
+	runCount: number;
+	agentCount: number;
+	workspaceCount: number;
+	leasedWorkspaceCount: number;
+	canDelete: boolean;
+	canArchive: boolean;
+	deleteBlockers: string[];
+};

@@ -195,3 +195,116 @@ Recorded because it cost real time. Three rounds of plausible static diagnosis o
 For any "nothing happens in the UI" report: build a fixture-data preview route,
 drive it with Playwright, measure element geometry and network calls, and only
 then theorise.
+
+## 16. A repo with runs is archived, never deleted
+
+`Run.repoId` is optional, so Prisma's default referential action for the relation
+is `SetNull`. Deleting a `Repo` therefore does not fail on its runs — it silently
+nulls out the column, and every one of those runs loses the repo it ran against.
+That is precisely the provenance the Notary exists to record, discarded by an
+operator who thought they were tidying up a list.
+
+So removal is two operations, not one:
+
+| Operation | What survives                                        | When it is offered         |
+| --------- | ---------------------------------------------------- | -------------------------- |
+| Archive   | Everything. The repo leaves the switcher only.       | Always, and reversible.    |
+| Delete    | Nothing to lose: refused while any run refers to it. | Only when `runCount` is 0. |
+
+`planRepoRemoval` computes the counts before the dialog opens, so the operator
+reads the consequence rather than discovering it. Core enforces the rule and the
+API defaults `mode` to `archive`, so a caller that forgets the parameter cannot
+destroy history by omission.
+
+The plan alone is not the guard. It is computed for a dialog, so by the time the
+button is pressed it is seconds old and dispatch may have created a run in the
+gap. Three layers, because the failure is silent and unrecoverable — a detached
+run cannot be re-attached, only guessed at:
+
+1. The preflight plan, which is what the operator reads.
+2. A re-read of the count inside the `deleteRepo` transaction.
+3. `Run.repo` declared `onDelete: Restrict`, so the database refuses even if both
+   checks above were raced. The resulting `P2003` is translated into the same
+   operator-facing message as a blocked delete.
+
+Archiving is enforced in the same place runs begin, not only in the UI that stops
+offering the repo: `dispatchRun` rejects a repo with a non-null `archivedAt`.
+A schedule, a direct `POST /api/runs`, or any later executor never sees the
+switcher, so the refusal has to live at the boundary every dispatch crosses.
+
+The same reasoning is why the slug is immutable after creation. Manifests name
+their repo by slug and `registry/<slug>/` is a real directory; a rename in the
+console would orphan every manifest pointing at it and leave the directory
+behind, with nothing failing loudly enough to notice.
+
+## 17. The repo selection is a view, not a permission
+
+The switcher writes `?repo=<slug>` and an `arnold.repo` cookie. Both are read
+back by `lib/repoSelection.ts`, URL first, and neither is trusted: a slug that no
+longer resolves to an active repo falls back to "all repos" and says so, because
+a cookie outliving a reseed should not render an empty console with no
+explanation.
+
+It is deliberately _only_ a view. Every trigger names its repo explicitly in the
+request body, and the Dispatcher reads that, never the cookie. A stale or forged
+cookie can therefore change what an operator is looking at and can never change
+where a run happens — which is why the cookie is `httpOnly: false` and carries no
+integrity protection. If the selection ever starts feeding the dispatch path,
+that reasoning is void and it needs signing.
+
+Two sources rather than one because they answer different questions. The URL
+makes a repo-scoped view linkable, matching how the run status filter already
+behaves. The cookie makes the choice survive navigating to a page that was linked
+without the param. The root layout can only see the cookie — layouts are not
+given search params — so `RepoSwitcher` reconciles the two on the client, which
+is the one place both are visible.
+
+The reconciliation is **one function in `lib/repoSelectionRule.ts`**, applied by
+the server page and the client switcher, and the module deliberately imports
+nothing server-only so both can. Two copies drifted apart the first time: the
+page treated an unknown `?repo=` slug as authoritative and fell back to all
+repos, while the switcher ignored it and displayed the cookie — so a stale shared
+link listed every repo while the control claimed one was selected. A control that
+misreports the scope is worse than no control.
+
+An explicit slug that cannot be honoured therefore resolves to "all repos" and
+says so; it never silently reverts to whatever this browser remembers. For the
+same reason the nav carries `?repo=` across links: a bare destination path would
+re-resolve from the cookie, turning a shared scoped link into a different repo on
+the first click. Only `repo` travels — a status filter means nothing on a screen
+that has none.
+
+## 18. Never name an App Router folder with a leading underscore
+
+`/api/repos/_probe` and `/api/repos/_selection` were the first attempt at keeping
+these endpoints out of the `[repoSlug]` namespace, where a repo slug could shadow
+them. Next treats an underscore-prefixed folder as a **private folder** and opts
+it, and every subfolder, out of routing entirely.
+
+The failure is quiet and misleading. `POST /api/repos/_probe` did not 404: it fell
+through to the dynamic sibling `[repoSlug]/route.ts` with `repoSlug` bound to
+`"_probe"`, which has no `POST` export, so it returned **405 Method Not Allowed**.
+A method error for a route that exists, on a path that does not.
+
+Both now live as siblings of `/api/repos` — `/api/repo-probe` and
+`/api/repo-selection` — which cannot collide with a slug at all.
+
+## 19. Changing a repo's clone source throws away its mirror
+
+The bare mirror is cloned once and keyed by slug, and `ensureMirror` refreshes an
+existing one by fetching _its own_ origin. So editing a repo's `localPath` or
+`remoteUrl` used to be recorded and then ignored: the row named the new source
+while every subsequent run kept executing the old one.
+
+That is the worst shape a bug can take here. Nothing errors, runs keep succeeding,
+artifacts keep being collected — against code nobody pointed at, with a
+provenance record that names the wrong source.
+
+So a source change calls `discardRepoWorkspaces`, which removes the mirror and
+every worktree derived from it, on disk and in the database, and the next lease
+re-clones. It refuses while any workspace is leased, and the discard happens
+_before_ the row is written: if the mirror cannot be rebuilt now, the edit must
+not land either, or the row and the disk disagree again in the other direction.
+
+Name and branch edits do not trigger it. Only the two fields that decide where
+the code comes from.
