@@ -21,7 +21,7 @@
  */
 
 import type { AgentManifest } from "@arnold/core";
-import { exampleRepoValues } from "./values.js";
+import { exampleRepoTracker, exampleRepoValues } from "./values.js";
 
 export const manifest: AgentManifest = {
 	id: "work-queue",
@@ -34,10 +34,13 @@ export const manifest: AgentManifest = {
 	repos: ["example-repo"],
 
 	// Fills the {{...}} placeholders this prompt reads. Rendering fails if one is missing.
+	// `trackerSync` replaced `trackerProjectKey` here: the prompt no longer names a
+	// tracker at all, so the whole Atlassian mechanic arrives as one block from the
+	// binding. Point this at githubTracker or noTracker and nothing else changes.
 	values: {
 		defaultBranch: exampleRepoValues.defaultBranch,
 		timezone: exampleRepoValues.timezone,
-		trackerProjectKey: exampleRepoValues.trackerProjectKey,
+		trackerSync: exampleRepoTracker.trackerSync,
 	},
 	invocable: "direct",
 
@@ -93,6 +96,10 @@ export const manifest: AgentManifest = {
 			"Bash(npx vitest run*)",
 			"Bash(npx eslint*)",
 			"Bash(npm run knip:production)",
+			// Whatever this repo's tracker binding needs to keep the board in step.
+			// Jira contributes an HTTP client here; GitHub contributes `gh issue`
+			// and `gh label`; a no-tracker repo contributes nothing at all.
+			...exampleRepoTracker.allowedTools,
 		],
 		// Guardrails from the prompt, made structural. The global denials in
 		// GLOBAL_DENIED_WRITE_GLOBS already cover .claude/, .env* and CI config.

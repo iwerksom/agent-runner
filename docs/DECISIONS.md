@@ -308,3 +308,91 @@ not land either, or the row and the disk disagree again in the other direction.
 
 Name and branch edits do not trigger it. Only the two fields that decide where
 the code comes from.
+
+## 20. The tracker is a binding, not a branch in the prompt
+
+`prompts/work-queue.md` carried 24 lines of Atlassian REST — basic-auth assembly,
+transition-id resolution by name, the agile sprint endpoint — and
+`prompts/plan-week.md` carried JQL and `getJiraIssue`. Both were unconditional.
+A repo without a Jira account could not run either agent, and the only escape was
+`WORK_QUEUE_NO_JIRA=1`, an env var that skipped the whole section.
+
+That is the wrong seam. **The discipline of keeping a board in step is identical
+on any tracker; the calls that carry it out never are.** Which state a ticket
+should be in, recomputed from all the sibling orders that share it; when to move
+it; that a failed board write must never park an order — none of that is
+Atlassian-specific, and all of it was tangled with prose that is.
+
+So the prompts keep the discipline and the mechanics arrive through
+`registry/trackers/`, exactly as `registry/ledtraad/doc-drift.ts` supplies
+measurements to a repo-agnostic auditing prompt. Three bindings:
+
+| Binding         | Cost                                  | For                                     |
+| --------------- | ------------------------------------- | --------------------------------------- |
+| `githubTracker` | none — `gh` is already authenticated  | any repo with a PR flow                 |
+| `noTracker`     | none — `queue.jsonl` is the board     | a single-committer repo, e.g. ledtraad  |
+| `jiraTracker`   | four secrets and an HTTP client grant | a repo that actually has a Jira project |
+
+**Rejected: an `if` in the prompt.** Three trackers described inline is three
+sets of instructions the model must skip past, in a file already long enough to
+be a cost line. It also makes the wrong thing easy — a fourth tracker means
+editing the prompt every repo shares.
+
+**Rejected: Linear or a self-hosted Forgejo as the free option.** Linear's free
+tier caps at 250 issues and adds a SaaS dependency; Forgejo is real ops for one
+person. GitHub Issues wins on one fact that outweighs the feature comparison:
+`work-queue` already shells `gh pr create` and `gh pr view`, so issues need no
+new credential, no new env var, and no MCP server.
+
+**"No tracker" is a declaration, not a skipped section.** A binding that says so
+tells the agent _why_, which stops it hunting for a board, and lets the report
+omit the tracker section rather than print an empty one. `queue.jsonl` already
+records status, attempts and the PR URL per order — that is everything a board
+would have shown.
+
+### What a binding has to supply, and why each field exists
+
+Two prose blocks (`trackerSync`, `trackerQuery`) were the obvious part. The other
+four are the places a tracker leaks out of prose, each found by rendering the
+prompts against all three bindings:
+
+- `branchGlob` — the hot-file set is built from unmerged branches matching
+  `PROJ-*`. On GitHub that is `issue-*`; too narrow and an in-flight branch is
+  missed, which is how two orders collide on one file.
+- `ticketExample` — `plan-week` writes a `queue.jsonl` example. An example in the
+  wrong shape gets copied faithfully into a real queue.
+- `mcpServers` — `["atlassian"]` hardcoded next to a GitHub binding pre-flights a
+  server the run will never call, failing it before it starts.
+- `allowedTools` — this one closed a real bug rather than anticipating one.
+  `work-queue`'s allow-list is `git`, `gh pr`, and the project's checks: nothing
+  that can reach a network API. At `scopeEnforcement: "manifest"` its Jira POSTs
+  were refused by the very policy the prompt was written against, so every board
+  update would have failed as a tool denial and been logged as a tracker outage.
+  The Jira binding now grants `Bash(curl -sS *)` — deliberately broad, because
+  pinning the pattern to a host and header shape breaks the moment an argument is
+  reordered. An agent holding a Jira token plus an unrestricted curl is the
+  residual risk, and it is a further reason `githubTracker`, which needs no such
+  grant, is the better default.
+
+### The ticket-key regex was the silent half
+
+`extractTicketKeys` matched `/\b[A-Z]{2,10}-\d+\b/` and was commented
+"Jira-style keys". A GitHub issue is `#482`, which it does not match — so a repo
+on `githubTracker` would have recorded `ticketKeys: null` on **every** run while
+nothing errored. Provenance degrading to nothing, quietly, is the exact failure
+this module exists to prevent.
+
+It now matches both shapes, and caps the issue number at five digits to keep
+six- and eight-digit hex colours out. `#abc`-style shorthand that happens to be
+all-numeric still collides, and that is the accepted trade: a false key is
+visible in the provenance strip and costs a glance, a missing one is invisible
+and costs the record.
+
+### Still Jira-shaped: the issue-_creating_ path
+
+`fix-pr-comments`, `pr-loop-analyzer-subagent` and `ai-smell-scan` still read
+`{{trackerProjectKey}}` and `{{trackerParentIssue}}` directly. They are a third
+mechanic — filing a new issue, rather than reading a backlog or moving a ticket —
+and they are untouched and working. That mechanic is the one the findings
+pipeline needs, so it is deliberately left for the work that will actually
+exercise it.

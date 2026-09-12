@@ -394,6 +394,35 @@ console.log("\n[11] notary: a run records the ticket it was dispatched against")
 		extractTicketKeys(undefined, "PROJ-2", undefined).length === 1,
 	);
 	check("a run with nothing to record yields none", extractTicketKeys(undefined).length === 0);
+
+	// The tracker is a per-repo binding; this regex is not. A repo on
+	// githubTracker used to record ticketKeys: null on every run, silently.
+	check(
+		"a GitHub issue reference is a ticket key",
+		extractTicketKeys("Closes #482 once the branch lands.")[0] === "#482",
+	);
+	check(
+		"a cross-repo GitHub reference keeps its owner/repo",
+		extractTicketKeys("blocked on anthropics/claude-code#7")[0] === "anthropics/claude-code#7",
+	);
+	check(
+		"a no-tracker repo's own order ids are keys",
+		extractTicketKeys("WO-7 depends on WO-3").length === 2,
+	);
+	check(
+		"both shapes coexist in one transcript",
+		extractTicketKeys("PROJ-1690 duplicates #482").join(",") === "PROJ-1690,#482",
+	);
+	// Six- and eight-digit hex colours are why the issue number is capped at five.
+	check(
+		"a hex colour is not a ticket key",
+		extractTicketKeys("background: #123456; accent: #abc").length === 0,
+		"the #\\d{1,5} cap is what keeps #123456 out",
+	);
+	check(
+		"a markdown heading is not a ticket key",
+		extractTicketKeys("## 1. Prompts stay in the target repo").length === 0,
+	);
 }
 
 console.log("\n[12] outcome parsing: a work order with no REJECT line is accepted, not unparsed");

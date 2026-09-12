@@ -35,13 +35,15 @@ order, park it and move on — that is a successful run, not a failure.
    next `ready` order does not fit, look further down the queue for one that
    does, and say which you skipped and why. `window: null` means capacity was a
    flat number, so order alone decides.
-5. **Resolve Jira once.** Read the credentials and the active sprint id per
-   "Keeping Jira in step". Do it now, not mid-run, so a missing token or a
-   sprint that cannot be resolved is known before any branch exists. If either
-   is unavailable, disable Jira for the whole run and say so in step 6 — do not
-   retry per order, and do not let it stop the code work.
-6. Print the orders you intend to run, the runway, and whether Jira updating is
-   on, then begin. Do not ask for confirmation — nobody is there.
+5. **Resolve the tracker once.** Read whatever "Keeping the tracker in step"
+   says this repo needs — credentials, a board, a set of labels. Do it now, not
+   mid-run, so a missing token or a board that cannot be resolved is known
+   before any branch exists. If it is unavailable, disable tracker updates for
+   the whole run and say so in step 6 — do not retry per order, and do not let
+   it stop the code work. When the binding declares no tracker, this step is
+   nothing and you skip straight to 6.
+6. Print the orders you intend to run, the runway, and whether tracker updating
+   is on, then begin. Do not ask for confirmation — nobody is there.
 
 ## Per order
 
@@ -85,8 +87,8 @@ parallel — they were sequenced for a reason.
    rule in the project's conventions file. If it already exists locally or
    remotely, park (`branch-exists`).
 5. **Put the ticket on the board.** Now that the premise and dependencies hold,
-   add the ticket to the active sprint and set its status per
-   "Keeping Jira in step". Failures here never stop the order.
+   set its state and put it where it can be seen, per "Keeping the tracker in
+   step". Failures here never stop the order.
 6. **Implement** the Steps, in order, as written. Honor the order's
    "Conventions to honor" and the project's conventions file (`CLAUDE.md` or
    `AGENTS.md` at the repo root), together with any architecture or docs it
@@ -132,7 +134,8 @@ parallel — they were sequenced for a reason.
     no automated reviewer fires until a human looks — do NOT run
     `/fix-pr-comments` unattended.
 
-    Once the PR is open, set the ticket's status per "Keeping Jira in step" —
+    Once the PR is open, set the ticket's state per "Keeping the tracker in
+    step" —
     `Testing` when this was the ticket's only order, still `In Progress` while
     sibling orders on the same ticket remain. The PR has to exist first, so the
     board never advertises testable work that has nothing to test.
@@ -144,47 +147,21 @@ parallel — they were sequenced for a reason.
     the next order, so a later park never leaves the tree on a half-finished
     branch.
 
-## Keeping Jira in step
+## Keeping the tracker in step
 
 The board should show what the machine did without anyone transcribing it. You
-transition the queue's own tickets and put them in the active sprint. You never
+move the queue's own tickets and put them where a human will see them. You never
 create an issue and never mark anything `Done`.
 
-**Credentials.** Read the project's local env file (`.env.local`). Use
-`JIRA_EMAIL` + `JIRA_API_TOKEN` — the host is `JIRA_DOMAIN` (stored with a
-scheme; strip it), the board is `JIRA_BOARD_ID`, the project is
-`JIRA_PROJECT_KEY`, which is expected to be `{{trackerProjectKey}}`. Basic
-auth: `Authorization: Basic base64(email:token)`. The Atlassian MCP is **not**
-an option here — it needs interactive OAuth and you run unattended. Never print
-a token, and never write a credential into a PR body, a log line, or a park
-file.
+**The rules below are the same on every tracker; the calls that carry them out
+never are.** So the two subsections after this one hold the discipline — what
+state a ticket should be in, and when to move it — and the block immediately
+below holds this repo's mechanics, supplied by its binding. Read the binding
+first: it decides whether there is a tracker here at all.
 
-**These moves are attributed to the account whose token this is.** The Jira
-history will read as that person moving the ticket, so the PR link is what
-tells a reader it was the agent — which is another reason step 10 posts the PR
-before this transition.
+### How this repo's tracker is driven
 
-**Resolve transitions by name, never by id.** `GET
-/rest/api/3/issue/<KEY>/transitions`, then match `to.name` case-insensitively
-and POST that transition's `id`:
-
-```
-POST /rest/api/3/issue/<KEY>/transitions   {"transition":{"id":"<id>"}}
-```
-
-Transition ids are per-board and differ between projects. A response of roughly
-this shape — `21 → In Progress`, `2 → Blocked`, `3 → Testing`, `31 → Done`,
-`11 → To Do` — is typical, and is a sanity check on what came back, never a
-constant to hardcode. Confirm the issue types in `{{trackerProjectKey}}` carry
-the statuses you need. If the name you need is absent from the response, do not
-substitute a different one — log it and move on.
-
-**Sprint.** Get the active sprint once per run:
-`GET /rest/agile/1.0/board/<JIRA_BOARD_ID>/sprint?state=active` → take the
-single `values[]` entry. Then
-`POST /rest/agile/1.0/sprint/<id>/issue  {"issues":["<KEY>"]}`. Adding an issue
-already in the sprint is a no-op, so this is safe to repeat. If more than one
-active sprint comes back, do not choose — skip the sprint move and say so.
+{{trackerSync}}
 
 ### Status is a property of the TICKET, not of the order
 
@@ -200,37 +177,38 @@ carrying that ticket and apply the first rule that matches:
 3. Otherwise (at least one row still `ready` or `in_progress`) → **In
    Progress**.
 
-Skip the call when the ticket is already in that status. This makes the whole
+Skip the call when the ticket is already in that state. This makes the whole
 thing idempotent: re-running a queue converges on the same board state.
 
 ### When to move
 
 - **Beginning work** — after the premise and dependency checks pass, before you
-  start editing files. Add to the active sprint and apply the rule above. Doing
+  start editing files. Put it on the board and apply the rule above. Doing
   it here rather than at step 1 means a `stale-premise` park never drags a
   ticket through `In Progress` on its way to `Blocked`.
 - **Draft PR pushed** — after step 9, apply the rule. With one order per ticket
   that is `Testing`; with five it stays `In Progress` until the last one lands.
-- **Parking** — apply the rule, which gives `Blocked`. Also add it to the
-  sprint: blocked work belongs on the board where it can be seen, not in the
-  backlog.
+- **Parking** — apply the rule, which gives `Blocked`. Also put it on the
+  board: blocked work belongs where it can be seen, not in the backlog.
 
-### Failure policy: Jira never blocks the code
+### Failure policy: the tracker never blocks the code
 
-A Jira write that fails is a reporting problem, not a work problem. **Never
-park an order, never abandon a branch, and never skip a PR because Jira did
-not respond.** On any non-2xx, missing credential, or absent transition: log
-one line, carry on with the next order, and list every failure in the final
-report under a **Jira** heading so the board can be corrected by hand.
+A board write that fails is a reporting problem, not a work problem. **Never
+park an order, never abandon a branch, and never skip a PR because the tracker
+did not respond.** On any error, missing credential, or absent state: log one
+line, carry on with the next order, and list every failure in the final report
+under a **Tracker** heading so the board can be corrected by hand.
 
-`WORK_QUEUE_NO_JIRA=1` skips every Jira call for the whole run — use it for a
-rehearsal. Say in the report that Jira was skipped and why, so a quiet run is
-never mistaken for a synced board.
+`WORK_QUEUE_NO_TRACKER=1` skips every tracker call for the whole run — use it
+for a rehearsal. Say in the report that the tracker was skipped and why, so a
+quiet run is never mistaken for a synced board. A binding that declares no
+tracker is a different thing and needs no flag: there, silence is correct and
+the report omits the section.
 
 ## Parking (do this well — it is the main deliverable of a bad order)
 
 To park: set `status: "parked"` in `queue.jsonl`, append the log line, move the
-ticket to `Blocked` and into the active sprint per "Keeping Jira in step", and
+ticket to `Blocked` and onto the board per "Keeping the tracker in step", and
 write `.week-plan/parked/WO-<n>-<TICKET>.md` containing:
 
 - What you were doing and the exact step you stopped at.
@@ -277,10 +255,11 @@ Then print, in this order:
    This is the first thing read on their return — put the recommendation in the
    line, not in the file only.
 3. **Noticed, not touched** — things you saw that are worth a ticket.
-4. **Jira** — the status each ticket now carries, and every failed or skipped
-   Jira call. Omit the section only when every call succeeded. If Jira was
-   skipped entirely (`WORK_QUEUE_NO_JIRA`, or no credentials in `.env.local`),
-   say so here rather than leaving it silent.
+4. **Tracker** — the state each ticket now carries, and every failed or skipped
+   call. Omit the section only when every call succeeded, or when this repo's
+   binding declares no tracker at all. If the tracker was skipped entirely
+   (`WORK_QUEUE_NO_TRACKER`, or a credential the binding names is absent), say
+   so here rather than leaving it silent.
 5. One line on whether the queue's quality held up, so `/plan-week` can be
    corrected next week.
 
@@ -292,12 +271,12 @@ Then print, in this order:
 - Never `git add -A`. Stage the paths you changed, by name, so nothing rides
   along that you did not read.
 - Never edit `.env*`, CI config, release config, or `.claude/` workflow files.
-- **Jira: transition and sprint-assign only, and only the queue's own tickets.**
-  Never create an issue — a ticket you think should exist goes in the report for
-  a human or `/plan-week` to file. Never edit a summary, description, estimate,
-  assignee or comment. Never transition anything to `Done`: you open draft PRs,
-  and only a human closes a ticket once they have reviewed one. Never touch a
-  ticket that is not a `ticket` field in `queue.jsonl`, however obviously
+- **Tracker: change state and board placement only, and only for the queue's own
+  tickets.** Never create an issue — a ticket you think should exist goes in the
+  report for a human or `/plan-week` to file. Never edit a summary, description,
+  estimate, assignee or comment. Never mark anything `Done` or closed: you open
+  draft PRs, and only a human closes a ticket once they have reviewed one. Never
+  touch a ticket that is not a `ticket` field in `queue.jsonl`, however obviously
   related.
 - Never work on a ticket that is not in the queue, however tempting.
 - If `git` or `gh` fails in a way you don't understand, stop the whole run and

@@ -16,7 +16,7 @@
  */
 
 import type { AgentManifest } from "@arnold/core";
-import { exampleRepoValues } from "./values.js";
+import { exampleRepoTracker, exampleRepoValues } from "./values.js";
 
 export const manifest: AgentManifest = {
 	id: "plan-week",
@@ -32,9 +32,14 @@ export const manifest: AgentManifest = {
 	values: {
 		defaultBranch: exampleRepoValues.defaultBranch,
 		timezone: exampleRepoValues.timezone,
-		trackerParentIssue: exampleRepoValues.trackerParentIssue,
-		trackerProjectKey: exampleRepoValues.trackerProjectKey,
 		workingHours: exampleRepoValues.workingHours,
+		// The three tracker-shaped placeholders. `trackerQuery` carries the whole
+		// backlog-gathering mechanic; the other two exist because the hot-file set
+		// and the queue example both have to be written in this tracker's shape,
+		// and an example in the wrong shape gets copied into a real queue.
+		trackerQuery: exampleRepoTracker.trackerQuery,
+		branchGlob: exampleRepoTracker.branchGlob,
+		ticketExample: exampleRepoTracker.ticketExample,
 	},
 	invocable: "direct",
 
@@ -83,9 +88,11 @@ export const manifest: AgentManifest = {
 			"Bash(git branch*)",
 			"Bash(gh pr list*)",
 		],
-		// Hard-stops if no Atlassian tool is reachable rather than inventing a
-		// backlog from the repo, so this is worth pre-flighting before the run.
-		mcpServers: ["atlassian"],
+		// Hard-stops if the tracker is unreachable rather than inventing a backlog
+		// from the repo, so this is worth pre-flighting before the run. Comes from
+		// the binding: a GitHub or no-tracker repo pre-flights nothing, and a
+		// hardcoded ["atlassian"] there would fail a run before it started.
+		mcpServers: [...exampleRepoTracker.mcpServers],
 		permissionMode: "default",
 	},
 	writeScope: "artifacts",

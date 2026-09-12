@@ -24,8 +24,30 @@ export type RunProvenance = {
 	provenanceTicketKeys: string[];
 };
 
-/** Jira-style keys: two to ten uppercase letters, a hyphen, digits. */
-const TICKET_KEY_RE = /\b[A-Z]{2,10}-\d+\b/g;
+/**
+ * Every ticket shape a registered tracker can produce, in one pattern.
+ *
+ * Two alternatives, because the tracker is a per-repo binding and this function
+ * is not:
+ *
+ *   - `PROJ-1234` — Jira, and by construction also `WO-7` and `FND-3`, the keys
+ *     a repo with no tracker writes into its own queue.
+ *   - `#482` / `owner/repo#482` — GitHub Issues.
+ *
+ * The GitHub alternative is the one that mattered. Before it, a repo on
+ * `githubTracker` recorded `ticketKeys: null` on **every** run and nothing
+ * errored: provenance silently degraded to nothing, which is the exact failure
+ * shape this module exists to prevent. See docs/DECISIONS.md #20.
+ *
+ * The issue number is capped at five digits to keep six- and eight-digit hex
+ * colours (`#123456`) out. Three digits still collide with `#abc`-style
+ * shorthand when it happens to be all-numeric, and that is the deliberate
+ * trade: a false key is visible in the provenance strip and costs a glance,
+ * a missing one is invisible and costs the record. The caller passes declared
+ * arguments before the transcript, so the run's real subject leads the list
+ * either way.
+ */
+const TICKET_KEY_RE = /\b[A-Z]{2,10}-\d+\b|(?:\b[\w.-]+\/[\w.-]+)?#\d{1,5}(?!\d)/g;
 
 /**
  * Ticket keys in first-seen order, scanned across `sources` in the order given.
