@@ -50,9 +50,11 @@ export const manifest: AgentManifest = {
 
 	tools: {
 		// Read-only, and deliberately without a general Bash escape. The prompt's
-		// one computed measurement is a `python3 -c` over entries.jsonl, so that
-		// exact shape is allowed and running anything under scripts/ is not: this
-		// agent must never be able to start the pipeline it is auditing.
+		// one computed measurement — colliding nummers in entries.jsonl — is a
+		// grep | sort | uniq -d | wc pipeline, so no interpreter is needed.
+		// `python3 -c` used to be allowed for it, and could write files or start
+		// the pipeline this agent audits; the allow-list is what makes
+		// "read-only" true, so it has none.
 		allowedTools: [
 			"Read",
 			"Grep",
@@ -61,7 +63,6 @@ export const manifest: AgentManifest = {
 			"Bash(ls *)",
 			"Bash(wc *)",
 			"Bash(test *)",
-			"Bash(python3 -c *)",
 		],
 		permissionMode: "default",
 	},

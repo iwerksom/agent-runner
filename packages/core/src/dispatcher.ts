@@ -47,9 +47,9 @@ export type DispatchRunResult = { runId: string };
  * usability one — a mistyped branch should cost a 400 and name the branches that
  * do exist, not a leased worktree and a failed run.
  *
- * An unverifiable ref is allowed through. A repo with no mirror yet and no local
- * checkout cannot be asked without the network, and refusing a ref that is
- * probably fine is worse than letting the lease surface git's own message.
+ * An unverifiable ref is allowed through. When the mirror cannot be synced — the
+ * source is offline, or was never reachable — refusing a ref that is probably
+ * fine is worse than letting the lease surface git's own message.
  */
 async function resolveBaseRef(repoRow: Repo, requested: string | undefined): Promise<string> {
 	const trimmed = requested?.trim();

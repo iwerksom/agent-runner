@@ -28,7 +28,7 @@ const measurements = `
 | Documents OCR'd | README counts table | \`wc -l < data/corpus/palme_corpus.jsonl\` |
 | Retrieval chunks | README counts table | \`wc -l < data/chunks/palme_chunks.jsonl\` |
 | Bilingual summaries, and the % of OCR'd documents | README counts table | \`wc -l < data/summaries.jsonl\`, as a percentage of the corpus count |
-| Colliding nummers ("63 numbers are reused", "62 of them...", "drive_id has 11 collisions") | CLAUDE.md traps section | count over \`data/entries.jsonl\`, keyed as \`_docid.colliding_nummers\` defines it — nummers appearing on more than one entry **that has a drive_id** |
+| Colliding nummers ("63 numbers are reused", "62 of them...", "drive_id has 11 collisions") | CLAUDE.md traps section | \`grep '"drive_id": "[^"]' data/entries.jsonl \| grep -o '"nummer": [^,]*' \| sort \| uniq -d \| wc -l\` — nummers appearing on more than one entry **that has a drive_id**, as \`_docid.colliding_nummers\` defines it |
 | Front-end file size ("one 136 KB HTML file") | README stack section, CLAUDE.md | \`wc -c web/index.html\` |
 | Every \`scripts/*.py\` named in prose | RUNBOOK, README, CLAUDE.md, ROADMAP | \`ls scripts/\` |
 | Every \`docs/*.md\` and root document named in prose | all four documents | \`ls docs/\` and the repo root |
@@ -44,16 +44,18 @@ const measurementNotes = `
   **unmeasurable here**, not drift. Report those once, under "could not verify",
   and audit the path and cross-reference claims instead — those are always
   checkable and are where the actionable findings usually are.
-- **One venv, \`.venv\` at the project root.** Outside it there is no \`python\`,
-  only \`python3\`. Prefer \`python3\` with the standard library for counting; the
-  audit must not depend on the venv being built.
+- **Count with the shell, not Python.** \`wc\`, \`grep\`, \`sort\` and \`uniq\` are
+  the instruments, and the commands in the table are the ones this agent is
+  allowed to run. An interpreter can write files, which a read-only audit must
+  not be able to do, so none is on the allow-list.
 - **\`nummer\` is not a unique key.** Any count you compute per document must be
   keyed on \`(nummer, drive_id)\`, per \`scripts/_docid.py\`. Counting distinct
   nummers will disagree with the documented figures by roughly 63, and the
   documents are right.
 - **Do not start the API, and do not run anything under \`scripts/\`.** If
-  \`GET localhost:8000/health\` answers because a server is already up, its counts
-  are fair evidence; if nothing is listening, that is not a finding.
+  \`curl -s --max-time 5 http://localhost:8000/health\` answers because a server is
+  already up, its counts are fair evidence; if nothing is listening, that is not
+  a finding. Use that command exactly — it is the only form allowed.
 - Counts in the README carry a measurement date in a \`<sub>\` note. A stale count
   whose note is also old is one finding, not two.
 `.trim();
@@ -100,8 +102,10 @@ export const manifest: AgentManifest = {
 		// The prompt says "you never edit a document" and "never run the pipeline".
 		// Nothing enforced either until this allow-list did. Bash is narrowed to
 		// the measuring commands the binding actually names: counting, listing and
-		// testing for existence. No `python3 scripts/...`, so the pipeline is out
-		// of reach even if the model decides it would be helpful.
+		// testing for existence. No interpreter at all — `python3 -c` can write
+		// files and start the pipeline, and read-only would then be a label rather
+		// than a property. The curl is one exact command for the same reason: a
+		// wildcard in it would admit `-o <file>`.
 		allowedTools: [
 			"Read",
 			"Grep",
@@ -112,8 +116,7 @@ export const manifest: AgentManifest = {
 			"Bash(head *)",
 			"Bash(tail *)",
 			"Bash(grep *)",
-			"Bash(python3 -c *)",
-			"Bash(curl -s --max-time * http://localhost:8000/health)",
+			"Bash(curl -s --max-time 5 http://localhost:8000/health)",
 		],
 		permissionMode: "default",
 	},
