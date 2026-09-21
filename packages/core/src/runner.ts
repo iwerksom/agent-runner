@@ -212,11 +212,16 @@ export async function runAgent(runId: string): Promise<void> {
 			// tool-permission path entirely — narrow this to [] once Phase 3 mounts
 			// credentials per tier and the conventions can be injected another way.
 			settingSources: ["project"],
-			// The allow-list is passed verbatim, patterns included. Anything the SDK
-			// does not pre-approve falls through to canUseTool, which is the real
-			// gate. Note it is not the ONLY gate: the SDK approves some read-only
-			// commands on its own, so this list is a floor, not a ceiling.
-			allowedTools: effectiveAllowList,
+			// Deliberately empty. The SDK approves anything matching `allowedTools`
+			// *before* canUseTool runs, so passing the manifest's list here meant a
+			// matched call skipped every check canUseTool makes beyond the pattern
+			// itself: per-segment matching, redirection targets, the external-write
+			// tier, the bookkeeping gate, deniedPaths. `Bash(gh issue edit*)`
+			// pre-approved would carry `--title` and `--body` straight past all of
+			// it. canUseTool applies the same allow-list as its rule 2, so nothing
+			// the manifest grants is lost — it is just checked properly. The SDK
+			// still approves some read-only commands on its own.
+			allowedTools: [],
 			permissionMode: fullManifest.tools.permissionMode,
 			maxTurns: fullManifest.budget.maxTurns,
 			canUseTool,

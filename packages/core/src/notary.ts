@@ -39,29 +39,27 @@ export type RunProvenance = {
  * errored: provenance silently degraded to nothing, which is the exact failure
  * shape this module exists to prevent. See docs/DECISIONS.md #20.
  *
- * The issue number is capped at five digits to keep six- and eight-digit hex
- * colours (`#123456`) out. Three digits still collide with `#abc`-style
- * shorthand when it happens to be all-numeric, and that is the deliberate
- * trade: a false key is visible in the provenance strip and costs a glance,
- * a missing one is invisible and costs the record. The caller passes declared
- * arguments before the transcript, so the run's real subject leads the list
- * either way.
+ * Only a bare `#<n>` in free text is capped, at five digits, to keep six- and
+ * eight-digit hex colours (`#123456`) out. Nothing else is: a declared argument
+ * is the run's subject by construction, and `owner/repo#<n>` is never a colour,
+ * so both accept any issue number. A bare six-digit reference in prose is the
+ * one thing still lost, and a repo that large passes the key as an argument.
+ * Three digits still collide with `#abc`-style shorthand when it happens to be
+ * all-numeric, and that is the deliberate trade: a false key is visible in the
+ * provenance strip and costs a glance, a missing one is invisible and costs the
+ * record.
  */
-const TICKET_KEY_RE = /\b[A-Z]{2,10}-\d+\b|(?:\b[\w.-]+\/[\w.-]+)?#\d{1,5}(?!\d)/g;
+const JIRA_KEY = String.raw`\b[A-Z]{2,10}-\d+\b`;
+const QUALIFIED_ISSUE = String.raw`\b[\w.-]+\/[\w.-]+#\d+(?!\d)`;
+const TRANSCRIPT_KEY_RE = new RegExp(`${JIRA_KEY}|${QUALIFIED_ISSUE}|#\\d{1,5}(?!\\d)`, "g");
+const DECLARED_KEY_RE = new RegExp(`${JIRA_KEY}|${QUALIFIED_ISSUE}|#\\d+(?!\\d)`, "g");
 
-/**
- * Ticket keys in first-seen order, scanned across `sources` in the order given.
- * Order is kept because the first key seen is almost always the one the run was
- * about, which is why the caller passes the declared arguments before the
- * transcript: an agent handed `ticketKey: PROJ-1690` is about PROJ-1690 even if it
- * never types the key, and it may well discuss other tickets before it does.
- */
-export function extractTicketKeys(...sources: (string | undefined)[]): string[] {
+function collectKeys(sources: [text: string | undefined, pattern: RegExp][]): string[] {
 	const seen = new Set<string>();
 	const keys: string[] = [];
-	for (const source of sources) {
-		if (source === undefined) continue;
-		for (const match of source.matchAll(TICKET_KEY_RE)) {
+	for (const [text, pattern] of sources) {
+		if (text === undefined) continue;
+		for (const match of text.matchAll(pattern)) {
 			const key = match[0];
 			if (seen.has(key)) continue;
 			seen.add(key);
@@ -69,6 +67,32 @@ export function extractTicketKeys(...sources: (string | undefined)[]): string[] 
 		}
 	}
 	return keys;
+}
+
+/**
+ * Ticket keys in free text, in first-seen order, scanned across `sources` in the
+ * order given.
+ */
+export function extractTicketKeys(...sources: (string | undefined)[]): string[] {
+	return collectKeys(
+		sources.map((text): [string | undefined, RegExp] => [text, TRANSCRIPT_KEY_RE]),
+	);
+}
+
+/**
+ * A run's ticket keys: declared arguments first, then the transcript. Order is
+ * kept because the first key seen is almost always the one the run was about:
+ * an agent handed `ticketKey: PROJ-1690` is about PROJ-1690 even if it never
+ * types the key, and it may well discuss other tickets before it does.
+ */
+export function extractRunTicketKeys(
+	declaredArgValues: readonly string[],
+	transcriptText: string | undefined,
+): string[] {
+	return collectKeys([
+		...declaredArgValues.map((text): [string, RegExp] => [text, DECLARED_KEY_RE]),
+		[transcriptText, TRANSCRIPT_KEY_RE],
+	]);
 }
 
 async function tryCommand(
@@ -138,7 +162,7 @@ export async function recordProvenance(
 	const { prUrl, prNumber } = await detectPullRequest(workspacePath);
 	// Arguments first, so the ticket the run was dispatched against leads the list
 	// even when the transcript mentions others earlier.
-	const provenanceTicketKeys = extractTicketKeys(...(declaredArgValues ?? []), transcriptText);
+	const provenanceTicketKeys = extractRunTicketKeys(declaredArgValues ?? [], transcriptText);
 
 	await prisma.run.update({
 		where: { id: runId },

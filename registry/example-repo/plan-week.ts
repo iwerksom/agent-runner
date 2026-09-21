@@ -33,13 +33,14 @@ export const manifest: AgentManifest = {
 		defaultBranch: exampleRepoValues.defaultBranch,
 		timezone: exampleRepoValues.timezone,
 		workingHours: exampleRepoValues.workingHours,
-		// The three tracker-shaped placeholders. `trackerQuery` carries the whole
-		// backlog-gathering mechanic; the other two exist because the hot-file set
+		// The tracker-shaped placeholders. `trackerQuery` carries the whole
+		// backlog-gathering mechanic; the others exist because the hot-file set
 		// and the queue example both have to be written in this tracker's shape,
 		// and an example in the wrong shape gets copied into a real queue.
 		trackerQuery: exampleRepoTracker.trackerQuery,
 		branchGlob: exampleRepoTracker.branchGlob,
 		ticketExample: exampleRepoTracker.ticketExample,
+		branchExample: exampleRepoTracker.branchExample,
 	},
 	invocable: "direct",
 
@@ -87,6 +88,10 @@ export const manifest: AgentManifest = {
 			"Bash(git diff*)",
 			"Bash(git branch*)",
 			"Bash(gh pr list*)",
+			// Whatever `trackerQuery` tells the agent to run to read the backlog.
+			// Reads only: the planner never moves a ticket, so it gets the query
+			// half of the binding and never the sync half.
+			...exampleRepoTracker.queryAllowedTools,
 		],
 		// Hard-stops if the tracker is unreachable rather than inventing a backlog
 		// from the repo, so this is worth pre-flighting before the run. Comes from

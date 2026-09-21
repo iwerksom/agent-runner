@@ -288,7 +288,7 @@ archived, carried, added, and dropped.
 {
 	"id": "WO-1",
 	"ticket": "{{ticketExample}}",
-	"branch": "{{ticketExample}}-<kebab-slug>",
+	"branch": "{{branchExample}}-<kebab-slug>",
 	"title": "<short>",
 	"est_minutes": 45,
 	"window": {
@@ -299,7 +299,7 @@ archived, carried, added, and dropped.
 	},
 	"depends_on": [],
 	"touches": ["src/..."],
-	"order_file": ".week-plan/orders/WO-1-{{ticketExample}}.md",
+	"order_file": ".week-plan/orders/WO-1-{{branchExample}}.md",
 	"status": "ready",
 	"pr": null,
 	"attempts": 0
@@ -308,7 +308,8 @@ archived, carried, added, and dropped.
 
 `branch` follows the project's branch-naming convention from the conventions
 file; where that convention leaves the shape open, use
-`<TICKET>-<kebab-slug>` as above. `status` is `ready` | `in_progress` | `done` |
+`{{branchExample}}-<kebab-slug>` as above — the ticket as a branch-safe word,
+not as written in `ticket`. `status` is `ready` | `in_progress` | `done` |
 `parked` | `blocked`. You only ever write `ready`; the executor owns it after
 that. `window` is `null` when capacity came from `--hours=N`.
 

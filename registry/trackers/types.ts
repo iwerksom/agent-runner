@@ -7,7 +7,7 @@
  * step is identical on any tracker; the API calls never are.** So the prompts
  * keep the discipline — when to move a ticket, how to recompute its state from
  * all of an order's siblings, that a failed board write must never park an
- * order — and everything tracker-specific arrives through these two strings.
+ * order — and everything tracker-specific arrives through this binding.
  *
  * Before this existed, `prompts/work-queue.md` carried 24 lines of Atlassian
  * REST: basic-auth assembly, transition-id resolution, the agile sprint
@@ -52,6 +52,14 @@ export type TrackerBinding = {
 	 */
 	ticketExample: string;
 	/**
+	 * Fills `{{branchExample}}` — the same ticket spelled as one branch-safe word,
+	 * used for the example's `branch` and `order_file`. Separate from
+	 * `ticketExample` because the two differ on GitHub: `#482` is the key, but
+	 * `#` in a branch name starts a comment in an unquoted `git checkout`, and
+	 * would not match `branchGlob` either. Must match `branchGlob`.
+	 */
+	branchExample: string;
+	/**
 	 * Fills `{{branchGlob}}` — the pattern matching branches this tracker's work
 	 * creates, used to build the hot-file set. Too narrow and an in-flight branch
 	 * is missed, which is how two orders collide on one file.
@@ -66,8 +74,8 @@ export type TrackerBinding = {
 	 */
 	mcpServers: string[];
 	/**
-	 * Tool patterns the sync block's own commands need, merged into the
-	 * manifest's `tools.allowedTools`.
+	 * Tool patterns the sync block's own commands need, merged into
+	 * `work-queue`'s `tools.allowedTools`.
 	 *
 	 * This closed a real gap rather than anticipating one. `work-queue`'s
 	 * allow-list is `git`, `gh pr`, and the project's checks — nothing that can
@@ -76,5 +84,20 @@ export type TrackerBinding = {
 	 * the very policy the prompt was written against, so every board update
 	 * would have failed as a tool denial and been logged as a tracker outage.
 	 */
-	allowedTools: string[];
+	syncAllowedTools: string[];
+	/**
+	 * Tool patterns the query block's commands need, merged into `plan-week`'s
+	 * `tools.allowedTools`. Read-only by construction and kept apart from
+	 * `syncAllowedTools` so the planner, which never moves a ticket, is never
+	 * granted what moves one.
+	 */
+	queryAllowedTools: string[];
+	/**
+	 * True when the sync block writes to a system outside the repo. A board
+	 * update is an external write in `writeScope.ts`'s terms, denied below
+	 * `external-writes`, so a manifest that syncs through this binding has to
+	 * run at that scope — or every board update is refused and logged as a
+	 * tracker outage.
+	 */
+	syncWritesExternally: boolean;
 };

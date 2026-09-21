@@ -386,7 +386,7 @@ function unsafePushFlagIn(segment: string): string | undefined {
 	return matched?.[1];
 }
 
-/** Writes that leave the repo: PR comments, non-GET API calls, Jira. */
+/** Writes that leave the repo: PR comments, non-GET API calls, Jira, HTTP clients. */
 function externalWriteIn(segment: string): string | undefined {
 	const normalised = segment.replace(/\s+/g, " ").trim();
 	if (/^gh\s+pr\s+(comment|review|close|reopen|merge|edit|ready)\b/.test(normalised)) {
@@ -405,13 +405,54 @@ function externalWriteIn(segment: string): string | undefined {
 			return "gh api (implicit POST)";
 	}
 	if (/^(jira|jira-cli|acli)\b/.test(normalised)) return normalised.split(" ")[0] ?? "jira";
+	// Any HTTP client aimed off this machine. A GET is not harmless here: an
+	// agent that has read a tracker token can send it anywhere with one. The
+	// loopback exception is what lets a read-only audit ask a local server for
+	// its health.
+	if (/^(curl|wget)\b/.test(normalised)) {
+		const urls = normalised.match(/\b(?:https?|ftp):\/\/[^\s"']+/g) ?? [];
+		const loopbackOnly =
+			urls.length > 0 &&
+			urls.every((url) => /^\w+:\/\/(localhost|127\.0\.0\.1|\[::1\])(?:[:/]|$)/.test(url));
+		if (!loopbackOnly) return normalised.split(" ")[0] ?? "curl";
+	}
+	return undefined;
+}
+
+/**
+ * The flags `gh issue edit` may carry: moving an issue on the board, and nothing
+ * that rewrites what a human wrote. A tracker binding needs labels and a
+ * milestone; the title, body and assignees belong to whoever filed the issue.
+ * Checked at every scope, because the allow-list cannot express it — a
+ * `Bash(gh issue edit*)` pattern's wildcard admits `--title` as readily as
+ * `--add-label`.
+ */
+const ISSUE_EDIT_BOARD_FLAGS = [
+	"--repo",
+	"-R",
+	"--add-label",
+	"--remove-label",
+	"--milestone",
+	"-m",
+] as const;
+
+function issueEditOverreachIn(segment: string): string | undefined {
+	const normalised = segment.replace(/\s+/g, " ").trim();
+	if (!/^gh\s+issue\s+edit\b/.test(normalised)) return undefined;
+	// Quoted words are values, never flags, so a label called "-x" is not one.
+	const words = normalised.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+	for (const word of words.slice(3)) {
+		if (!word.startsWith("-")) continue;
+		const flag = word.split("=")[0] ?? word;
+		if (!(ISSUE_EDIT_BOARD_FLAGS as readonly string[]).includes(flag)) return flag;
+	}
 	return undefined;
 }
 
 /**
  * Build the `canUseTool` callback for one run. The returned function is the whole
- * enforcement surface: the SDK calls it for every tool use it has not already
- * pre-approved from `allowedTools`.
+ * enforcement surface. The runner passes the SDK no `allowedTools` of its own, so
+ * every tool use reaches this callback rather than being pre-approved past it.
  */
 export function buildCanUseTool(input: BuildCanUseToolInput): CanUseToolFn {
 	const { manifest, workspacePath, declaredTools, defaultBranch, readBookkeepingPaths } = input;
@@ -668,7 +709,7 @@ export function buildCanUseTool(input: BuildCanUseToolInput): CanUseToolFn {
 				//
 				// A push that lands on the default branch is checked at EVERY scope,
 				// because that is the case the grant exists for. work-queue sits at
-				// draft-pr, where the tier test is already satisfied, and still commits
+				// draft-pr or above, where the tier test is already satisfied, and still commits
 				// .week-plan/ straight to main; gating only on the tier would leave its
 				// grant advisory and main unprotected above branch-push.
 				const mutation = vcsMutationIn(segment);
@@ -689,6 +730,13 @@ export function buildCanUseTool(input: BuildCanUseToolInput): CanUseToolFn {
 						);
 						if (decision !== undefined) return decision;
 					}
+				}
+				const overreach = issueEditOverreachIn(segment);
+				if (overreach !== undefined) {
+					return {
+						behavior: "deny",
+						message: `"gh issue edit ${overreach}" changes more than an issue's place on the board; agents may only add or remove labels and set the milestone (${ISSUE_EDIT_BOARD_FLAGS.join(", ")})`,
+					};
 				}
 				if (!atLeast(scope, "external-writes")) {
 					const external = externalWriteIn(segment);

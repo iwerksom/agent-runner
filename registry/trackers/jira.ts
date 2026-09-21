@@ -25,15 +25,27 @@ export function jiraTracker({ projectKey, parentIssue }: JiraTrackerConfig): Tra
 	return {
 		ticketKeyShape: `${projectKey}-<number>`,
 		ticketExample: `${projectKey}-1234`,
+		branchExample: `${projectKey}-1234`,
 		branchGlob: `${projectKey}-*`,
 		mcpServers: ["atlassian"],
 		// The REST calls in `trackerSync` need an HTTP client, and `work-queue`'s
-		// allow-list has never had one. Deliberately broad: pinning the pattern to
-		// a host and header shape breaks the moment an argument is reordered, and a
-		// board update that fails as a tool denial looks exactly like a tracker
-		// outage. The residual risk — an agent holding a Jira token and an
-		// unrestricted curl — is the reason `githubTracker` needs no such grant.
-		allowedTools: ["Bash(curl -sS *)"],
+		// allow-list has never had one. Broad as a pattern, because pinning it to a
+		// host and header shape breaks the moment an argument is reordered — but
+		// not broad as a grant: writeScope.ts counts any curl aimed off this
+		// machine as an external write, so it is only usable by a manifest running
+		// at `external-writes`, which `syncWritesExternally` below forces and which
+		// takes an admin to trigger. An agent holding a Jira token and a curl is
+		// still the residual risk, and the reason `githubTracker` needs no such grant.
+		syncAllowedTools: ["Bash(curl -sS *)"],
+		// The MCP tools `trackerQuery` names. Tool names are `mcp__<server>__<tool>`;
+		// without them the planner's backlog read is denied at manifest enforcement.
+		queryAllowedTools: [
+			"mcp__atlassian__getAccessibleAtlassianResources",
+			"mcp__atlassian__searchJiraIssuesUsingJql",
+			"mcp__atlassian__getJiraIssue",
+		],
+		// Transitions and sprint moves are POSTs to Atlassian.
+		syncWritesExternally: true,
 
 		trackerSync: `
 **Credentials.** Read the project's local env file (\`.env.local\`). Use

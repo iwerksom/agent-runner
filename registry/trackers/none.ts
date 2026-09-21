@@ -37,11 +37,15 @@ export function noTracker({ reason }: NoTrackerConfig): TrackerBinding {
 		// with no tracker-specific pattern.
 		ticketKeyShape: "WO-<number>",
 		ticketExample: "WO-1",
+		branchExample: "WO-1",
 		branchGlob: "WO-*",
 		mcpServers: [],
 		// Nothing to grant. A no-tracker binding that widened the allow-list would
 		// be granting reach for calls the prompt tells the agent not to make.
-		allowedTools: [],
+		syncAllowedTools: [],
+		queryAllowedTools: [],
+		// `queue.jsonl` is the board, and it is in the repo.
+		syncWritesExternally: false,
 
 		trackerSync: `
 **This repo has no issue tracker.** ${reason}

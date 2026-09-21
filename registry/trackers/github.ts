@@ -65,19 +65,31 @@ milestone to have somewhere to put it.`;
 		ticketExample: "#482",
 		// `#` is legal in a git ref but hostile in a shell, so branches spell the
 		// issue out. Kept in step with the branch rule in `trackerSync`.
+		branchExample: "issue-482",
 		branchGlob: "issue-*",
 		// None. `gh` is a Bash allow-list entry, not a server to pre-flight.
 		mcpServers: [],
 		// Read, label, and (only when a milestone is configured) assign. `gh issue
 		// create` and `gh issue close` are absent on purpose, not by oversight:
 		// the prompt forbids both, and this is where that stops being prose.
-		allowedTools: [
+		// `gh issue edit*` reads broader than it is: writeScope.ts refuses any
+		// edit flag beyond labels and milestone, so `--title` and `--body` are
+		// denied however the pattern matches.
+		syncAllowedTools: [
 			"Bash(gh issue view*)",
 			"Bash(gh issue edit*)",
 			"Bash(gh issue list*)",
 			"Bash(gh label list*)",
 			"Bash(gh label create*)",
 		],
+		// Exactly the commands `trackerQuery` names, all of them reads.
+		queryAllowedTools: [
+			"Bash(gh issue list*)",
+			"Bash(gh issue view*)",
+			"Bash(gh auth status*)",
+		],
+		// Labels and milestones live on github.com, not in the repo.
+		syncWritesExternally: true,
 
 		trackerSync: `
 **Credentials.** None to read. \`gh\` is already authenticated in this

@@ -352,27 +352,58 @@ would have shown.
 
 ### What a binding has to supply, and why each field exists
 
-Two prose blocks (`trackerSync`, `trackerQuery`) were the obvious part. The other
-four are the places a tracker leaks out of prose, each found by rendering the
-prompts against all three bindings:
+Two prose blocks (`trackerSync`, `trackerQuery`) were the obvious part. The rest
+are the places a tracker leaks out of prose, found by rendering the prompts
+against all three bindings — and, for the last three, by review of the first
+version of this change:
 
 - `branchGlob` — the hot-file set is built from unmerged branches matching
   `PROJ-*`. On GitHub that is `issue-*`; too narrow and an in-flight branch is
   missed, which is how two orders collide on one file.
 - `ticketExample` — `plan-week` writes a `queue.jsonl` example. An example in the
   wrong shape gets copied faithfully into a real queue.
+- `branchExample` — the same ticket as a branch-safe word, for the example's
+  `branch` and `order_file`. On Jira the two are identical, which is how the
+  first version got away with one field: it rendered GitHub branches as
+  `#482-<slug>`, where `#` starts a comment in an unquoted `git checkout` and
+  the branch also fails `issue-*`.
 - `mcpServers` — `["atlassian"]` hardcoded next to a GitHub binding pre-flights a
   server the run will never call, failing it before it starts.
-- `allowedTools` — this one closed a real bug rather than anticipating one.
+- `syncAllowedTools` — this one closed a real bug rather than anticipating one.
   `work-queue`'s allow-list is `git`, `gh pr`, and the project's checks: nothing
   that can reach a network API. At `scopeEnforcement: "manifest"` its Jira POSTs
   were refused by the very policy the prompt was written against, so every board
   update would have failed as a tool denial and been logged as a tracker outage.
-  The Jira binding now grants `Bash(curl -sS *)` — deliberately broad, because
-  pinning the pattern to a host and header shape breaks the moment an argument is
-  reordered. An agent holding a Jira token plus an unrestricted curl is the
-  residual risk, and it is a further reason `githubTracker`, which needs no such
-  grant, is the better default.
+  The Jira binding grants `Bash(curl -sS *)` — broad as a pattern, because
+  pinning it to a host and header shape breaks the moment an argument is
+  reordered.
+- `queryAllowedTools` — the same gap on the planner's side: `plan-week` got the
+  binding's MCP servers but not the `gh issue list` / `gh issue view` its GitHub
+  query block runs. Kept apart from the sync half, so the planner, which never
+  moves a ticket, is never granted what moves one.
+- `syncWritesExternally` — moving a ticket is an external write, and
+  `writeScope.ts` refuses those below `external-writes`. At `draft-pr` every
+  GitHub label change would have been denied. A binding that syncs off-repo now
+  lifts `work-queue` to `external-writes`, which also means an admin to trigger
+  it; `noTracker` leaves it at `draft-pr`.
+
+Two enforcement changes came with those, because the allow-list could not carry
+them:
+
+- **Any `curl` or `wget` aimed off this machine is an external write.** A GET is
+  not harmless when the agent has just read a tracker token, so the Jira grant
+  is usable only at `external-writes`. Loopback stays allowed, which is what lets
+  a read-only audit ask a local server for its health.
+- **`gh issue edit` may add or remove labels and set the milestone, nothing
+  else**, at every scope. `Bash(gh issue edit*)`'s wildcard admits `--title` and
+  `--body` as readily as `--add-label`, and the binding's promise not to rewrite
+  what a human filed was prose until this.
+
+Neither would have held while the runner handed the allow-list to the SDK as
+`allowedTools`. The SDK approves a matching call _before_ `canUseTool` runs, so a
+pre-approved `gh issue edit --title ...` never reached any of these checks. The
+runner now passes the SDK no allow-list at all; `canUseTool` applies the same
+list itself, so nothing granted is lost.
 
 ### The ticket-key regex was the silent half
 

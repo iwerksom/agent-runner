@@ -161,16 +161,16 @@ templates, then add a sibling directory for your own repo and register it in
 They are worth reading because between them they cover every agent kind and
 every write scope the model supports:
 
-| Agent                       | Kind     | Write scope       | What it demonstrates                                                                                    |
-| --------------------------- | -------- | ----------------- | ------------------------------------------------------------------------------------------------------- |
-| `work-order-scoper`         | subagent | `read-only`       | A subagent promoted to direct invocation, with its caller's context block rebuilt via `contextTemplate` |
-| `ai-smell-scan`             | command  | `read-only`       | `invocable: "child"` — the worker of a fan-out script, not a runnable unit on its own                   |
-| `pr-loop-analyzer`          | command  | `artifacts`       | Writes exactly one report, so artifact collection has something to collect                              |
-| `plan-week`                 | command  | `artifacts`       | `needs-local-session` plus `unattendedIfArgs`, and a `mainBookkeeping` grant                            |
-| `pre-pr-review`             | command  | `working-tree`    | Edits code in the leased worktree with no push credential mounted                                       |
-| `work-queue`                | command  | `draft-pr`        | Branches, pushes, opens draft PRs; prompt guardrails encoded as an allow-list                           |
-| `fix-pr-comments`           | command  | `external-writes` | The most privileged tier, and the only `needs-human` agent                                              |
-| `pr-loop-analyzer-subagent` | subagent | `external-writes` | The wider-scoped twin behind an id collision, registered so it is visible rather than silently shadowed |
+| Agent                       | Kind     | Write scope       | What it demonstrates                                                                                                  |
+| --------------------------- | -------- | ----------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `work-order-scoper`         | subagent | `read-only`       | A subagent promoted to direct invocation, with its caller's context block rebuilt via `contextTemplate`               |
+| `ai-smell-scan`             | command  | `read-only`       | `invocable: "child"` — the worker of a fan-out script, not a runnable unit on its own                                 |
+| `pr-loop-analyzer`          | command  | `artifacts`       | Writes exactly one report, so artifact collection has something to collect                                            |
+| `plan-week`                 | command  | `artifacts`       | `needs-local-session` plus `unattendedIfArgs`, and a `mainBookkeeping` grant                                          |
+| `pre-pr-review`             | command  | `working-tree`    | Edits code in the leased worktree with no push credential mounted                                                     |
+| `work-queue`                | command  | `external-writes` | Branches, pushes, opens draft PRs, moves Jira tickets; `draft-pr` under `noTracker`, where the board is `queue.jsonl` |
+| `fix-pr-comments`           | command  | `external-writes` | The most privileged tier, and the only `needs-human` agent                                                            |
+| `pr-loop-analyzer-subagent` | subagent | `external-writes` | The wider-scoped twin behind an id collision, registered so it is visible rather than silently shadowed               |
 
 **All eight are registered, but the gating they assume is not built yet.** There
 is no auth, so anything reaching the port can trigger any of them, including the
