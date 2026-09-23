@@ -263,22 +263,64 @@ async function readPromptSource(
  * Fill `{{name}}` placeholders in a manifest `contextTemplate`. Unfilled ones are
  * blanked rather than left in place: a literal `{{hotFiles}}` reaching the model
  * reads as an instruction to invent one.
+ *
+ * One pass over the template, not one replace per argument. Each placeholder is
+ * looked up once, in the template as written, so an argument whose value itself
+ * contains `{{something}}` is inserted verbatim instead of being filled by a
+ * later argument or stripped as a leftover.
  */
 function fillContextTemplate(
 	template: string,
 	manifest: Pick<AgentManifest, "args">,
 	resolved: Record<string, string>,
 ): string {
-	let filled = template;
+	const valuesByName = new Map<string, string>();
 	for (const spec of manifest.args) {
 		const value = resolved[spec.name] ?? "";
-		filled = filled.replaceAll(`{{${spec.name}}}`, value);
+		valuesByName.set(spec.name, value);
 		const shape = classifySlot(spec.slot);
 		if (shape.slotKind === "template" && shape.slotTemplateName !== spec.name) {
-			filled = filled.replaceAll(`{{${shape.slotTemplateName}}}`, value);
+			valuesByName.set(shape.slotTemplateName, value);
 		}
 	}
-	return filled.replace(LEFTOVER_TEMPLATE_RE, "");
+	return template.replace(
+		LEFTOVER_TEMPLATE_RE,
+		(token) => valuesByName.get(token.slice(2, -2)) ?? "",
+	);
+}
+
+/**
+ * Fill the prompt body's `{{name}}` placeholders from the manifest's `values`
+ * map, then refuse to render if any remain.
+ *
+ * Unfilled placeholders are an error, not something to blank. `contextTemplate`
+ * strips its leftovers because an absent optional argument legitimately renders
+ * as nothing there; a body placeholder is different. It is a repo constant the
+ * manifest was supposed to supply, and stripping it silently rewrites the
+ * instruction — `git diff {{defaultBranch}}...HEAD` becomes `git diff ...HEAD`,
+ * which is still a valid command meaning something else. Failing here costs a
+ * render; failing later costs a whole run and produces a plausible wrong answer.
+ */
+function fillManifestValues(body: string, manifest: Pick<AgentManifest, "id" | "values">): string {
+	const values = manifest.values ?? {};
+	const unfilled = new Set<string>();
+	// Single pass, like fillContextTemplate: a value that happens to contain
+	// `{{...}}` is inserted as written, not treated as another placeholder.
+	const filled = body.replace(LEFTOVER_TEMPLATE_RE, (token) => {
+		const name = token.slice(2, -2);
+		if (Object.hasOwn(values, name)) return values[name] as string;
+		unfilled.add(token);
+		return token;
+	});
+
+	const leftover = [...unfilled];
+	if (leftover.length > 0) {
+		throw new ValidationError(
+			`agent ${manifest.id}: the prompt body still contains ${leftover.join(", ")} after rendering. Add ${leftover.length === 1 ? "it" : "them"} to the manifest's \`values\` map — these are per-repo constants, so the value belongs to this repo's manifest, not to the prompt.`,
+			{ agentId: manifest.id, unfilledPlaceholders: leftover },
+		);
+	}
+	return filled;
 }
 
 function substituteSlot(body: string, spec: ArgSpec, value: string | undefined): string {
@@ -323,7 +365,10 @@ export async function renderPrompt(
 	const { promptFileBody, promptFileFrontmatter } = parsePromptFile(raw);
 	const declaredTools = parseDeclaredTools(promptFileFrontmatter["tools"]);
 
-	let body = promptFileBody;
+	// Manifest values first, while the body is still only the prompt file. Run
+	// arguments are operator input: filled afterwards, a `{{name}}` inside one is
+	// text, not a placeholder to rewrite or a leftover to fail the render on.
+	let body = fillManifestValues(promptFileBody, manifest);
 	for (const spec of manifest.args) {
 		body = substituteSlot(body, spec, resolved[spec.name]);
 	}

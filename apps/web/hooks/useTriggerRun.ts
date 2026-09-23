@@ -62,6 +62,9 @@ export function useTriggerRun({
 }): {
 	triggerRunValues: Record<string, string>;
 	triggerRunSetValue: (argName: string, value: string) => void;
+	/** Branch, tag or SHA. Empty means the repo's default branch. */
+	triggerRunBaseRef: string;
+	triggerRunSetBaseRef: (baseRef: string) => void;
 	triggerRunMissingArgNames: string[];
 	triggerRunCanSubmit: boolean;
 	triggerRunPending: boolean;
@@ -75,6 +78,7 @@ export function useTriggerRun({
 	const [triggerRunValues, setTriggerRunValues] = useState<Record<string, string>>(() =>
 		seedValues(triggerRunAgent.args),
 	);
+	const [triggerRunBaseRef, setTriggerRunBaseRef] = useState("");
 	const [triggerRunPending, setTriggerRunPending] = useState(false);
 	const [triggerRunError, setTriggerRunError] = useState<string | undefined>(undefined);
 	const [triggerRunErrorKind, setTriggerRunErrorKind] = useState<TriggerRunErrorKind | undefined>(
@@ -90,6 +94,7 @@ export function useTriggerRun({
 
 	const triggerRunReset = useCallback(() => {
 		setTriggerRunValues(seedValues(triggerRunAgent.args));
+		setTriggerRunBaseRef("");
 		setTriggerRunError(undefined);
 		setTriggerRunErrorKind(undefined);
 		setTriggerRunErrorDetails(undefined);
@@ -126,6 +131,11 @@ export function useTriggerRun({
 					agentId: triggerRunAgent.id,
 					repoSlug: triggerRunRepoSlug,
 					args,
+					// Omitted rather than sent empty, so the Dispatcher applies the
+					// repo's default branch instead of validating a blank ref.
+					...(triggerRunBaseRef.trim() === ""
+						? {}
+						: { baseRef: triggerRunBaseRef.trim() }),
 				}),
 			});
 
@@ -169,6 +179,7 @@ export function useTriggerRun({
 		router,
 		triggerRunAgent.args,
 		triggerRunAgent.id,
+		triggerRunBaseRef,
 		triggerRunOnLaunched,
 		triggerRunRepoSlug,
 		triggerRunValues,
@@ -177,6 +188,8 @@ export function useTriggerRun({
 	return {
 		triggerRunValues,
 		triggerRunSetValue,
+		triggerRunBaseRef,
+		triggerRunSetBaseRef: setTriggerRunBaseRef,
 		triggerRunMissingArgNames,
 		triggerRunCanSubmit,
 		triggerRunPending,

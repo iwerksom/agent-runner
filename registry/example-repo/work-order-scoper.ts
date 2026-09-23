@@ -11,6 +11,7 @@
  */
 
 import type { AgentManifest } from "@arnold/core";
+import { exampleRepoValues } from "./values.js";
 
 export const manifest: AgentManifest = {
 	id: "work-order-scoper",
@@ -42,6 +43,11 @@ export const manifest: AgentManifest = {
 	].join("\n"),
 
 	repos: ["example-repo"],
+
+	// Fills the {{...}} placeholders this prompt reads. Rendering fails if one is missing.
+	values: {
+		defaultBranch: exampleRepoValues.defaultBranch,
+	},
 	invocable: "direct",
 
 	args: [

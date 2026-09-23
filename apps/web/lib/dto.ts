@@ -154,6 +154,8 @@ export type RunDetail = RunSummary & {
 	artifacts: ArtifactDto[];
 	children: RunSummary[];
 	workspacePath?: string;
+	/** Recorded by the Notary on every lease; previously dropped by this mapper. */
+	workspaceId?: string;
 	baseRef?: string;
 };
 
@@ -219,6 +221,7 @@ export type RunRowForDto = {
 	args: string | null;
 	baseRef?: string | null;
 	baseSha: string | null;
+	workspaceId?: string | null;
 	branch: string | null;
 	prUrl: string | null;
 	prNumber: number | null;
@@ -496,6 +499,7 @@ export function mapRunDetail(
 		artifacts: (row.artifacts ?? []).map(mapArtifact),
 		children: relations.children,
 		workspacePath: relations.workspacePath,
+		...(row.workspaceId === null ? {} : { workspaceId: row.workspaceId }),
 		baseRef: row.baseRef ?? undefined,
 	};
 }

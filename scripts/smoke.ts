@@ -15,7 +15,7 @@ import {
 	snapshotArtifacts,
 } from "../packages/core/src/collect.js";
 import { atLeast } from "../packages/core/src/agents.js";
-import { extractTicketKeys } from "../packages/core/src/notary.js";
+import { extractRunTicketKeys, extractTicketKeys } from "../packages/core/src/notary.js";
 import { renderPrompt, validateArgs } from "../packages/core/src/prompt.js";
 import { buildCanUseTool } from "../packages/core/src/writeScope.js";
 import { manifest as aiSmellScan } from "../registry/example-repo/ai-smell-scan.js";
@@ -365,8 +365,8 @@ console.log("\n[11] notary: a run records the ticket it was dispatched against")
 
 	// The regression: the scoper answers in prose and need never repeat the key,
 	// which recorded ticketKeys: null for a run wholly about PROJ-1690.
-	const silent = extractTicketKeys(
-		...declaredArgValues,
+	const silent = extractRunTicketKeys(
+		declaredArgValues,
 		"REJECT: undecided-design. No key here.",
 	);
 	check(
@@ -377,7 +377,7 @@ console.log("\n[11] notary: a run records the ticket it was dispatched against")
 	check("a ticket cited in the issue text is also captured", silent.includes("PROJ-1298"));
 
 	// Manifest order decides the lead: ticketKey is declared before issueText.
-	const ordered = extractTicketKeys(...declaredArgValues, "PROJ-9999 came up first in prose.");
+	const ordered = extractRunTicketKeys(declaredArgValues, "PROJ-9999 came up first in prose.");
 	check(
 		"the dispatched ticket leads the list",
 		ordered[0] === "PROJ-1690",
@@ -394,6 +394,49 @@ console.log("\n[11] notary: a run records the ticket it was dispatched against")
 		extractTicketKeys(undefined, "PROJ-2", undefined).length === 1,
 	);
 	check("a run with nothing to record yields none", extractTicketKeys(undefined).length === 0);
+
+	// The tracker is a per-repo binding; this regex is not. A repo on
+	// githubTracker used to record ticketKeys: null on every run, silently.
+	check(
+		"a GitHub issue reference is a ticket key",
+		extractTicketKeys("Closes #482 once the branch lands.")[0] === "#482",
+	);
+	check(
+		"a cross-repo GitHub reference keeps its owner/repo",
+		extractTicketKeys("blocked on anthropics/claude-code#7")[0] === "anthropics/claude-code#7",
+	);
+	check(
+		"a no-tracker repo's own order ids are keys",
+		extractTicketKeys("WO-7 depends on WO-3").length === 2,
+	);
+	check(
+		"both shapes coexist in one transcript",
+		extractTicketKeys("PROJ-1690 duplicates #482").join(",") === "PROJ-1690,#482",
+	);
+	// Six- and eight-digit hex colours are why the issue number is capped at five.
+	check(
+		"a hex colour is not a ticket key",
+		extractTicketKeys("background: #123456; accent: #abc").length === 0,
+		"the #\\d{1,5} cap on bare references is what keeps #123456 out",
+	);
+	check(
+		"a markdown heading is not a ticket key",
+		extractTicketKeys("## 1. Prompts stay in the target repo").length === 0,
+	);
+	// The cap is for bare references in prose only. A declared argument is the
+	// run's subject, and owner/repo#n is never a colour, so neither is capped.
+	check(
+		"a six-digit issue passed as an argument is recorded",
+		extractRunTicketKeys(["#100000"], "no key in prose")[0] === "#100000",
+	);
+	check(
+		"a six-digit cross-repo reference is a ticket key",
+		extractTicketKeys("tracked in microsoft/vscode#100000")[0] === "microsoft/vscode#100000",
+	);
+	check(
+		"a hex colour in the transcript is still not a key when args are declared",
+		extractRunTicketKeys(["#482"], "background: #123456;").join(",") === "#482",
+	);
 }
 
 console.log("\n[12] outcome parsing: a work order with no REJECT line is accepted, not unparsed");

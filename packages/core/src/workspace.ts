@@ -89,22 +89,46 @@ async function pathExists(candidate: string): Promise<boolean> {
 	}
 }
 
+type MirrorSync = {
+	mirror: string;
+	/**
+	 * True when the mirror now reflects the clone source: freshly cloned, or
+	 * refreshed without error. False means it is whatever an earlier fetch left.
+	 */
+	mirrorIsCurrent: boolean;
+};
+
 /**
  * Create the bare mirror if absent, otherwise refresh it. A failed refresh is
  * logged rather than thrown: a stale mirror still resolves existing refs, and
  * Phase 0 is expected to run offline.
+ *
+ * Tags are fetched alongside branches because a run may be based on either, and
+ * the worktree is always created from this mirror.
+ *
+ * Deliberately no `--prune`. Every worktree shares this mirror's refs, so a
+ * branch an agent has created but not yet pushed exists only here, and pruning
+ * against the source would delete it mid-run. `checkRepoRef` asks the source
+ * directly instead of trusting a branch that may have been deleted upstream.
  */
-async function ensureMirror(repo: Repo): Promise<string> {
+async function syncMirror(repo: Repo): Promise<MirrorSync> {
 	const mirror = mirrorPathFor(repo.slug);
 	if (await pathExists(mirror)) {
 		try {
-			await runGit(["--git-dir=" + mirror, "fetch", "origin", "+refs/heads/*:refs/heads/*"]);
+			await runGit([
+				"--git-dir=" + mirror,
+				"fetch",
+				"origin",
+				"+refs/heads/*:refs/heads/*",
+				"+refs/tags/*:refs/tags/*",
+			]);
+			return { mirror, mirrorIsCurrent: true };
 		} catch (caught: unknown) {
 			console.warn(
 				`[arnold] mirror refresh failed for ${repo.slug}; continuing with the existing mirror. ${String(caught)}`,
 			);
+			return { mirror, mirrorIsCurrent: false };
 		}
-		return mirror;
 	}
 
 	const cloneSource = repo.localPath ?? repo.remoteUrl;
@@ -116,7 +140,11 @@ async function ensureMirror(repo: Repo): Promise<string> {
 	}
 	await mkdir(path.dirname(mirror), { recursive: true });
 	await runGit(["clone", "--bare", cloneSource, mirror]);
-	return mirror;
+	return { mirror, mirrorIsCurrent: true };
+}
+
+async function ensureMirror(repo: Repo): Promise<string> {
+	return (await syncMirror(repo)).mirror;
 }
 
 /**
@@ -355,4 +383,168 @@ export async function discardRepoWorkspaces(
 	await rm(mirrorPathFor(repoSlug), { recursive: true, force: true });
 
 	return { removedWorktrees: rows.length };
+}
+
+/**
+ * A ref name that is safe to hand to git as a positional argument.
+ *
+ * The leading character must be alphanumeric, which is the part that matters:
+ * `runGit` uses execFile with an argument array so there is no shell to inject
+ * into, but git itself would read a leading `-` as an option. `--upload-pack=`
+ * in a ref position is a command execution primitive, so this is a real gate and
+ * not defensive decoration.
+ *
+ * Everything else here is git's own ref grammar, narrowed: no `..`, no `@{`, no
+ * ASCII control characters, no trailing `/` or `.lock`. Branch names with
+ * slashes (`docs/expand-documentation`), tags, and full or abbreviated SHAs all
+ * pass.
+ */
+const SAFE_REF_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,200}$/;
+
+export function isSafeGitRef(ref: string): boolean {
+	if (!SAFE_REF_RE.test(ref)) return false;
+	if (ref.includes("..") || ref.includes("@{")) return false;
+	if (ref.endsWith("/") || ref.endsWith(".lock")) return false;
+	return true;
+}
+
+export type RefCheck =
+	/** The ref resolves. `sha` is the commit it points at right now. */
+	| { refState: "resolved"; sha: string }
+	/** Nothing here resolves it, and we could look. */
+	| { refState: "unknown"; candidates: string[] }
+	/** The mirror could not be brought up to date, so no answer is authoritative. */
+	| { refState: "unverifiable" };
+
+/**
+ * Does `ref` name something in this repo?
+ *
+ * Called at dispatch so a typo fails immediately and for free, instead of
+ * several minutes later inside `git worktree add` with a run row already
+ * created, a workspace leased and the operator watching an empty transcript.
+ *
+ * Asks the mirror, and only the mirror, because that is what the lease creates
+ * the worktree from: a ref found anywhere else would pass here and fail there.
+ * The mirror is synced first, the same way the lease syncs it, so a branch
+ * pushed a minute ago is found.
+ *
+ * A named branch or tag is then confirmed against the clone source. The mirror
+ * is never pruned (see `syncMirror`), so a branch deleted upstream would still
+ * resolve here and run against its last-known commit. A commit SHA has no
+ * upstream name to confirm and is taken as resolved.
+ *
+ * When the mirror cannot be synced the answer is `unverifiable` rather than a
+ * guess: refusing a ref that is probably fine is worse than letting the lease
+ * report git's own error.
+ */
+export async function checkRepoRef(repo: Repo, ref: string): Promise<RefCheck> {
+	let sync: MirrorSync;
+	try {
+		sync = await syncMirror(repo);
+	} catch {
+		return { refState: "unverifiable" };
+	}
+	const { mirror, mirrorIsCurrent } = sync;
+
+	let sha = "";
+	try {
+		// `^{commit}` makes this fail on a ref that exists but is not a commit,
+		// which is what the worktree needs.
+		const { gitStdout } = await runGit([
+			"--git-dir=" + mirror,
+			"rev-parse",
+			"--verify",
+			"--quiet",
+			`${ref}^{commit}`,
+		]);
+		sha = gitStdout.trim();
+	} catch {
+		// rev-parse exits non-zero for an unknown ref.
+	}
+
+	if (!mirrorIsCurrent) {
+		// A stale mirror can neither rule a new branch out nor vouch for an old one.
+		return { refState: "unverifiable" };
+	}
+	if (sha !== "") {
+		const upstream = await refExistsUpstream(mirror, ref);
+		if (upstream === "unreachable") return { refState: "unverifiable" };
+		if (upstream !== "deleted") return { refState: "resolved", sha };
+	}
+
+	return { refState: "unknown", candidates: await listBranches(mirror) };
+}
+
+/**
+ * Is `ref`, as a branch or tag name, still at the clone source? `not-a-name`
+ * means the mirror holds no branch or tag by that name, so the ref resolved as a
+ * commit SHA and there is nothing upstream to ask about.
+ */
+async function refExistsUpstream(
+	mirror: string,
+	ref: string,
+): Promise<"present" | "deleted" | "not-a-name" | "unreachable"> {
+	const candidateNames = ref.startsWith("refs/")
+		? [ref]
+		: [`refs/heads/${ref}`, `refs/tags/${ref}`];
+	const { gitStdout: localRefs } = await runGit([
+		"--git-dir=" + mirror,
+		"for-each-ref",
+		"--format=%(refname)",
+		...candidateNames,
+	]).catch(() => ({ gitStdout: "" }));
+	// for-each-ref also matches by leading path components (`refs/heads/x` lists
+	// `refs/heads/x/y`), so keep only the exact names.
+	const localNames = localRefs
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((name) => candidateNames.includes(name));
+	if (localNames.length === 0) return "not-a-name";
+
+	try {
+		const { gitStdout } = await runGit([
+			"--git-dir=" + mirror,
+			"ls-remote",
+			"origin",
+			...localNames,
+		]);
+		// ls-remote patterns match on trailing path components, so `x` would also
+		// match `refs/heads/feature/x`. Only an exact name counts.
+		const remoteNames = gitStdout
+			.split("\n")
+			.map((line) => line.split("\t")[1]?.trim())
+			.filter((name): name is string => name !== undefined);
+		return remoteNames.some((name) => localNames.includes(name)) ? "present" : "deleted";
+	} catch {
+		return "unreachable";
+	}
+}
+
+/**
+ * The branches that do exist, so a refusal names the alternatives rather than
+ * only the mistake. Read from the clone source, because the unpruned mirror
+ * still holds branches deleted upstream and would offer exactly the ones just
+ * refused. Listing is a convenience; its failure must not change the verdict.
+ */
+async function listBranches(mirror: string): Promise<string[]> {
+	try {
+		const { gitStdout } = await runGit([
+			"--git-dir=" + mirror,
+			"ls-remote",
+			"--heads",
+			"origin",
+		]);
+		return gitStdout
+			.split("\n")
+			.map((line) =>
+				line
+					.split("\t")[1]
+					?.trim()
+					.replace(/^refs\/heads\//, ""),
+			)
+			.filter((name): name is string => name !== undefined && name !== "")
+			.slice(0, 20);
+	} catch {
+		return [];
+	}
 }

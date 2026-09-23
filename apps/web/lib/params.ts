@@ -55,6 +55,13 @@ export const createRunBodySchema = z.object({
 	agentId: z.string().min(1),
 	repoSlug: z.string().min(1),
 	args: z.record(z.string()).default({}),
+	/**
+	 * Branch, tag or SHA. Envelope only — whether it is a safe ref shape and
+	 * whether it exists in this repo is core's call in `dispatchRun`, for the
+	 * same reason argument validation is: a second copy of those rules here
+	 * would drift from the one that runs.
+	 */
+	baseRef: z.string().min(1).optional(),
 });
 export type CreateRunBody = z.infer<typeof createRunBodySchema>;
 

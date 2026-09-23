@@ -46,7 +46,7 @@ The one property every phase must preserve:
 | `README.md`            | How to run it, and the traps that bite on first setup                   |
 | `docs/architecture.md` | The plan of record, written before the code. Long.                      |
 | `docs/DECISIONS.md`    | Why the code looks like this. Read before changing anything structural. |
-| `docs/ROADMAP.md`      | Seven phases with acceptance criteria                                   |
+| `docs/ROADMAP.md`      | Eight phases with acceptance criteria                                   |
 | `docs/HANDOVER.md`     | This file: what actually works today                                    |
 
 `packages/core/src/agents.ts` is the file to read first in the code. Everything

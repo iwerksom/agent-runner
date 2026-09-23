@@ -15,6 +15,7 @@
  */
 
 import type { AgentManifest } from "@arnold/core";
+import { exampleRepoValues } from "./values.js";
 
 export const manifest: AgentManifest = {
 	id: "ai-smell-scan",
@@ -25,6 +26,11 @@ export const manifest: AgentManifest = {
 	prompt: { kind: "console", path: "prompts/ai-smell-scan.md" },
 
 	repos: ["example-repo"],
+
+	// Fills the {{...}} placeholders this prompt reads. Rendering fails if one is missing.
+	values: {
+		trackerProjectKey: exampleRepoValues.trackerProjectKey,
+	},
 	// Child only: the harness owns the report file, the daily budget and the
 	// ticket filing. Registering it direct would put the console one level below
 	// the button anyone wants to press.
