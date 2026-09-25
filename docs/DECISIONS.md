@@ -308,3 +308,38 @@ not land either, or the row and the disk disagree again in the other direction.
 
 Name and branch edits do not trigger it. Only the two fields that decide where
 the code comes from.
+
+## 20. No repo is named in code; per-repo values are settings, not arguments
+
+Two things tied Arnold to one project after the genericization. The registry was
+a map from slug to manifests with a single key, `example-repo`, so a repo added in
+the console got no agents until someone created `registry/<slug>/` and edited
+`registry/index.ts`. And `TARGET_REPO_*` seeded a first repo row, on the stated
+grounds that an empty database had no console to add one from, which was not
+true: `/repos` renders and adds fine with zero rows.
+
+Both are gone. `registry/library/` is a flat list of manifests that all declare
+`repos: ["*"]`, `createRepo` syncs the registry so they attach on creation, and
+`pnpm seed` creates only the operator (it warns if `TARGET_REPO_*` is still set).
+The `repos` field stays, so a manifest for a repo-sourced prompt that only one
+project has can still name that project's slug. That is data in a manifest, not a
+repo baked into Arnold.
+
+The prompts' `{{trackerProjectKey}}`, `{{timezone}}` and friends were the other
+half. They could have been run arguments, but they are facts about the repo,
+identical on every run, and a value retyped on every run is the kind that gets
+typed wrong once. So they are `Repo.promptVariables`, edited under Prompt values
+on the repo form, with `{{defaultBranch}}` taken from the existing column.
+
+The catalogue in `repoVariables.ts` is closed on purpose. A `{{name}}` is filled
+from repo settings only if it is listed there, so an argument slot like
+`{{woNumber}}` can never be mistaken for one, and the form's fields come from the
+same list. Values are filled before arguments are substituted, so a submitted
+issue text that happens to contain `{{timezone}}` is not rewritten.
+
+A missing value refuses the run rather than rendering a blank. The Dispatcher
+checks console prompts before creating the Run row, and `renderPrompt` checks
+again once a repo-sourced prompt is readable in the lease. A blank would read as
+"project ``" in a JQL query, and a literal `{{trackerProjectKey}}` invites the
+model to make one up. Either way the run would succeed while answering the wrong
+question.

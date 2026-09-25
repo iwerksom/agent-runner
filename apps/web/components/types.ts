@@ -27,7 +27,13 @@ import type {
 	RunOutcomeDto,
 } from "@/lib/dto";
 
-export type { ArtifactDto, RepoDto, RunEventDto, RunSummary } from "@/lib/dto";
+export type {
+	ArtifactDto,
+	PromptVariableFieldDto,
+	RepoDto,
+	RunEventDto,
+	RunSummary,
+} from "@/lib/dto";
 
 /** dto.ts calls it ArtifactDto; the UI names it for the run it belongs to. */
 export type { ArtifactDto as RunArtifactDto } from "@/lib/dto";

@@ -1,5 +1,5 @@
 /**
- * Purpose: manifest overlay for the `/plan-week` command in example-repo.
+ * Purpose: manifest overlay for the `/plan-week` agent.
  * Derives capacity from the calendar, pulls PROJ candidates from Jira, screens
  * them for agent-safety, and fits self-contained work orders into real windows.
  *
@@ -25,7 +25,7 @@ export const manifest: AgentManifest = {
 	kind: "command",
 	prompt: { kind: "console", path: "prompts/plan-week.md" },
 
-	repos: ["example-repo"],
+	repos: ["*"],
 	invocable: "direct",
 
 	args: [

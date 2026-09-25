@@ -74,7 +74,7 @@ export type ArtifactBaseline = Map<string, number>;
 
 const ARTIFACT_GLOB_OPTIONS = {
 	onlyFiles: true,
-	dot: true, // every artifact directory in example-repo is dot-prefixed
+	dot: true, // every artifact directory the library agents write is dot-prefixed
 	followSymbolicLinks: false,
 	unique: true,
 } as const;
@@ -84,7 +84,7 @@ const ARTIFACT_GLOB_OPTIONS = {
  *
  * Without this, collection sweeps up every file the glob matches in a real
  * checkout, not the ones the run produced: `.pr-loop/reports/PR-*.md` is 51
- * tracked files in example-repo, so one analyzer run claimed eight reports
+ * tracked files in the first target repo, so one analyzer run claimed eight reports
  * of which it had written one. That misattributes authorship on the run page and
  * re-copies the repo's history into the store on every run.
  *

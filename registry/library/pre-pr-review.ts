@@ -1,5 +1,5 @@
 /**
- * Purpose: manifest overlay for the `/pre-pr-review` command in example-repo.
+ * Purpose: manifest overlay for the `/pre-pr-review` agent.
  * Reviews the current branch's diff as Copilot would and fixes the substantive
  * findings before a PR is opened.
  *
@@ -20,7 +20,7 @@ export const manifest: AgentManifest = {
 	kind: "command",
 	prompt: { kind: "console", path: "prompts/pre-pr-review.md" },
 
-	repos: ["example-repo"],
+	repos: ["*"],
 	invocable: "direct",
 
 	// Phase 4 registers the mutating agents; Phase 3 is what makes them safe to

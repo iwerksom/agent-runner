@@ -1,11 +1,11 @@
 /**
- * Purpose: smoke-test the two modules that have no database dependency, against
- * the REAL prompt files in the example-repo checkout. These are the parts
- * most likely to be silently wrong: a prompt whose `<PR>` token never got
+ * Purpose: smoke-test the modules that have no database dependency, against the
+ * REAL prompt files in the agent library and a checkout you name. These are the
+ * parts most likely to be silently wrong: a prompt whose `<PR>` token never got
  * substituted still runs, it just analyses the wrong PR, and a tool policy that
  * fails open looks identical to one that works until an agent writes something.
  *
- * Run: npx tsx scripts/smoke.ts <path-to-example-repo-checkout>
+ * Run: pnpm smoke <path-to-any-git-checkout>
  * Exits non-zero on the first failed assertion.
  */
 
@@ -16,22 +16,48 @@ import {
 } from "../packages/core/src/collect.js";
 import { atLeast } from "../packages/core/src/agents.js";
 import { extractTicketKeys } from "../packages/core/src/notary.js";
-import { renderPrompt, validateArgs } from "../packages/core/src/prompt.js";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { repoRoot } from "../packages/core/src/paths.js";
+import { renderPrompt, validateArgs, type RepoPromptContext } from "../packages/core/src/prompt.js";
+import {
+	fillRepoVariables,
+	REPO_VARIABLES,
+	repoVariableValues,
+} from "../packages/core/src/repoVariables.js";
 import { buildCanUseTool } from "../packages/core/src/writeScope.js";
-import { manifest as aiSmellScan } from "../registry/example-repo/ai-smell-scan.js";
-import { manifest as fixPrComments } from "../registry/example-repo/fix-pr-comments.js";
-import { manifest as analyzerSubagent } from "../registry/example-repo/pr-loop-analyzer-subagent.js";
-import { manifest as analyzer } from "../registry/example-repo/pr-loop-analyzer.js";
-import { manifest as prePrReview } from "../registry/example-repo/pre-pr-review.js";
-import { manifest as planWeek } from "../registry/example-repo/plan-week.js";
-import { manifest as scoper } from "../registry/example-repo/work-order-scoper.js";
-import { manifest as workQueue } from "../registry/example-repo/work-queue.js";
+import { registryManifests } from "../registry/index.js";
+import { manifest as aiSmellScan } from "../registry/library/ai-smell-scan.js";
+import { manifest as fixPrComments } from "../registry/library/fix-pr-comments.js";
+import { manifest as analyzerSubagent } from "../registry/library/pr-loop-analyzer-subagent.js";
+import { manifest as analyzer } from "../registry/library/pr-loop-analyzer.js";
+import { manifest as prePrReview } from "../registry/library/pre-pr-review.js";
+import { manifest as planWeek } from "../registry/library/plan-week.js";
+import { manifest as scoper } from "../registry/library/work-order-scoper.js";
+import { manifest as workQueue } from "../registry/library/work-queue.js";
 
 const checkout = process.argv[2];
 if (checkout === undefined) {
-	console.error("usage: tsx scripts/smoke.ts <path-to-example-repo-checkout>");
+	console.error("usage: pnpm smoke <path-to-any-git-checkout>");
 	process.exit(2);
 }
+
+/**
+ * A repo with every prompt value set, built the way the Runner builds it: from a
+ * Repo row, through `repoVariableValues`. No real repo is named.
+ */
+const smokeRepo: RepoPromptContext = {
+	repoSlug: "smoke-repo",
+	repoValues: repoVariableValues({
+		defaultBranch: "trunk",
+		promptVariables: JSON.stringify({
+			trackerProjectKey: "SMOKE",
+			trackerParentIssue: "SMOKE-1",
+			timezone: "Europe/Copenhagen",
+			workingHours: "09:00-17:00",
+		}),
+	}),
+};
 
 let failures = 0;
 function check(label: string, condition: boolean, detail?: string): void {
@@ -48,7 +74,7 @@ console.log("\n[1] prompt rendering: pr-loop-analyzer uses the literal token <PR
 	const resolved = validateArgs(analyzer, { prNumber: "1234" });
 	check("validateArgs resolves prNumber", resolved.prNumber === "1234");
 
-	const rendered = await renderPrompt(analyzer, { prNumber: "1234" }, checkout);
+	const rendered = await renderPrompt(analyzer, { prNumber: "1234" }, checkout, smokeRepo);
 	const body = rendered.promptBody;
 	check("prompt body is non-trivial", body.length > 500, `length ${body.length}`);
 	check("no <PR> token survives substitution", !body.includes("<PR>"));
@@ -68,6 +94,7 @@ console.log("\n[2] prompt rendering: work-order-scoper gets a rebuilt context bl
 			hotFiles: "src/app/foo.tsx",
 		},
 		checkout,
+		smokeRepo,
 	);
 	const body = rendered.promptBody;
 	check("context template was appended", body.includes("## Your assignment"));
@@ -76,6 +103,7 @@ console.log("\n[2] prompt rendering: work-order-scoper gets a rebuilt context bl
 	check("windowMinutes substituted", body.includes("75"));
 	check("issueText substituted", body.includes("the thing is renamed"));
 	check("no unfilled {{placeholders}} remain", !/\{\{\w+\}\}/.test(body));
+	check("the repo's default branch was filled in", body.includes("against `trunk`"));
 	check(
 		"declaredTools was read from the subagent frontmatter",
 		(rendered.declaredTools ?? []).includes("Read"),
@@ -87,7 +115,7 @@ console.log("\n[3] prompt rendering: a missing required argument is refused");
 {
 	let threw = false;
 	try {
-		await renderPrompt(analyzer, {}, checkout);
+		await renderPrompt(analyzer, {}, checkout, smokeRepo);
 	} catch {
 		threw = true;
 	}
@@ -147,19 +175,18 @@ console.log("\n[5] write scope: artifacts-scoped pr-loop-analyzer writes only it
 console.log("\n[6] artifact scoping: a run claims its own output, not the checkout's");
 {
 	// Run against the real checkout, because that is where this failed:
-	// `.pr-loop/reports/PR-*.md` is dozens of tracked files in example-repo,
+	// `.pr-loop/reports/PR-*.md` was dozens of tracked files in the first target repo,
 	// and collecting all of them attributed seven reports to a run that wrote one.
+	// Any checkout will do, so one with no reports yet is normal: the two
+	// pre-existing-report checks are skipped and said to be skipped.
 	const globs = analyzer.artifactGlobs;
 	const baseline = await snapshotArtifacts(checkout, globs);
-	check(
-		"the checkout already matches the analyzer's globs",
-		baseline.size > 1,
-		`${baseline.size} match(es)`,
-	);
 
 	const [existingPath] = [...baseline.keys()];
 	if (existingPath === undefined) {
-		check("a pre-existing report to test against", false, "no matches to sample");
+		console.log(
+			`  skip  pre-existing report checks: ${checkout} has nothing matching ${globs.join(", ")}`,
+		);
 	} else {
 		const existingMtimeMs = baseline.get(existingPath) ?? 0;
 		check(
@@ -502,6 +529,77 @@ console.log("\n[13] Phase 0 hold: nothing above `artifacts` may be triggerable")
 	// The two that carry Phase 0 must stay pressable, or the hold has overreached.
 	check("work-order-scoper is still runnable", scoper.disabled === undefined);
 	check("pr-loop-analyzer is still runnable", analyzer.disabled === undefined);
+}
+
+console.log("\n[14] repo variables: every library prompt is fully filled from repo settings");
+{
+	for (const manifest of registryManifests) {
+		check(
+			`${manifest.id} is declared for every repo, not a named one`,
+			manifest.repos.includes("*"),
+		);
+		if (manifest.prompt.kind !== "console") continue;
+
+		const raw = await readFile(path.join(repoRoot(), manifest.prompt.path), "utf8");
+		const text = `${raw}\n${manifest.contextTemplate ?? ""}`;
+		const { filled, missing } = fillRepoVariables(text, smokeRepo.repoValues);
+		// What may remain is the manifest's own argument slots, which the
+		// Dispatcher fills from the run form.
+		const argSlots = new Set(manifest.args.map((spec) => spec.name));
+		const leftovers = [...filled.matchAll(/\{\{(\w+)\}\}/g)]
+			.map((match) => match[1] ?? "")
+			.filter((name) => !argSlots.has(name));
+		check(
+			`${manifest.id}: no unfilled {{placeholders}} remain`,
+			missing.length === 0 && leftovers.length === 0,
+			`missing ${JSON.stringify(missing)}, unknown ${JSON.stringify([...new Set(leftovers)])}`,
+		);
+	}
+
+	const planWeekOnBareRepo: RepoPromptContext = {
+		repoSlug: "bare-repo",
+		repoValues: repoVariableValues({ defaultBranch: "main", promptVariables: null }),
+	};
+	let refusal = "";
+	try {
+		await renderPrompt(
+			planWeek,
+			{ isoWeek: "2026-W40", hours: "4" },
+			checkout,
+			planWeekOnBareRepo,
+		);
+	} catch (caught) {
+		refusal = caught instanceof Error ? caught.message : String(caught);
+	}
+	check(
+		"a repo without its tracker key is refused, naming the setting",
+		refusal.includes("Tracker project key") && refusal.includes("bare-repo"),
+		refusal === "" ? "rendered without complaint" : refusal,
+	);
+
+	const echoed = await renderPrompt(
+		scoper,
+		{
+			woNumber: "1",
+			ticketKey: "SMOKE-2",
+			issueText: "Literal text {{timezone}} in the ticket must not be rewritten.",
+			windowMinutes: "60",
+		},
+		checkout,
+		smokeRepo,
+	);
+	check(
+		"argument values are not treated as repo variables",
+		!echoed.promptBody.includes("Literal text Europe/Copenhagen"),
+	);
+
+	check(
+		"defaultBranch comes from the repo column",
+		smokeRepo.repoValues.defaultBranch === "trunk" &&
+			REPO_VARIABLES.some(
+				(spec) => spec.name === "defaultBranch" && spec.source === "column",
+			),
+	);
 }
 
 console.log(

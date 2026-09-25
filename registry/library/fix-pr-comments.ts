@@ -1,6 +1,6 @@
 /**
- * Purpose: manifest overlay for the `/fix-pr-comments` command in
- * example-repo. Fetches a PR's Copilot review comments, fixes the
+ * Purpose: manifest overlay for the `/fix-pr-comments` agent.
+ * Fetches a PR's Copilot review comments, fixes the
  * substantive ones, pushes, re-requests review, and loops until clean or capped.
  *
  * The most privileged agent in the registry, and the only one at
@@ -27,7 +27,7 @@ export const manifest: AgentManifest = {
 	kind: "command",
 	prompt: { kind: "console", path: "prompts/fix-pr-comments.md" },
 
-	repos: ["example-repo"],
+	repos: ["*"],
 	invocable: "direct",
 
 	// The widest scope registered: it pushes, comments on PRs and resolves threads.

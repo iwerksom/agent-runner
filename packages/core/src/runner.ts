@@ -21,6 +21,7 @@ import { parseJsonColumn, stringifyJsonColumn } from "./json.js";
 import { checkBudget, recordUsage } from "./ledger.js";
 import { recordProvenance } from "./notary.js";
 import { renderPrompt } from "./prompt.js";
+import { repoVariableValues } from "./repoVariables.js";
 import {
 	isAbortError,
 	isErrorResult,
@@ -154,6 +155,7 @@ export async function runAgent(runId: string): Promise<void> {
 			fullManifest,
 			args,
 			lease.workspacePath,
+			{ repoSlug: run.repo.slug, repoValues: repoVariableValues(run.repo) },
 		);
 		const effectiveAllowList = intersectToolPatterns(
 			fullManifest.tools.allowedTools,
@@ -172,7 +174,7 @@ export async function runAgent(runId: string): Promise<void> {
 
 		// Taken before the loop, so collection can tell this run's files from the
 		// ones the checkout already carried. A leased worktree is a real checkout:
-		// example-repo tracks 51 files under .pr-loop/reports alone.
+		// The first target repo tracked 51 files under .pr-loop/reports alone.
 		const artifactBaseline = await snapshotArtifacts(
 			lease.workspacePath,
 			fullManifest.artifactGlobs,
@@ -201,7 +203,7 @@ export async function runAgent(runId: string): Promise<void> {
 			// Omitting it loads user, project AND local settings. The worktree is a
 			// real checkout, so "local" means the target repo's own
 			// .claude/settings.local.json — 54 pre-approved permissions in
-			// example-repo, including Bash(git push *), Bash(git commit *) and
+			// the first target repo, including Bash(git push *), Bash(git commit *) and
 			// Bash(gh pr *). Those are consulted before canUseTool, so a repo could
 			// pre-approve its way straight past the manifest's allow-list, which is
 			// the one thing this console exists to prevent.

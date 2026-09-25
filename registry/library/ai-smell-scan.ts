@@ -1,5 +1,5 @@
 /**
- * Purpose: manifest overlay for the `/ai-smell-scan` command in example-repo.
+ * Purpose: manifest overlay for the `/ai-smell-scan` agent.
  *
  * Registered as `invocable: "child"`, because this is not a scan: it is the
  * read-only per-batch worker that `scripts/ai-smell-runner.py` invokes once per
@@ -24,7 +24,7 @@ export const manifest: AgentManifest = {
 	kind: "command",
 	prompt: { kind: "console", path: "prompts/ai-smell-scan.md" },
 
-	repos: ["example-repo"],
+	repos: ["*"],
 	// Child only: the harness owns the report file, the daily budget and the
 	// ticket filing. Registering it direct would put the console one level below
 	// the button anyone wants to press.

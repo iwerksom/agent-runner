@@ -20,16 +20,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// A target repository. Multi-repo from day one even though Phase 0 seeds one.
+/// A target repository. Added, edited and removed from the console's /repos
+/// page; no repo is named in code or seeded from the environment.
 model Repo {
   id            String  @id @default(cuid())
-  slug          String  @unique // "example-repo"
+  slug          String  @unique // "my-service"
   name          String
   remoteUrl     String
   /// Local checkout used as the clone source, so Phase 0 needs no network.
   localPath     String?
   defaultBranch String  @default("main")
   claudeDir     String  @default(".claude")
+  /// JSON-TEXT Record<string, string>: what each prompt `{{variable}}` means on
+  /// this repo (tracker project key, timezone, ...). The catalogue of names is
+  /// packages/core/src/repoVariables.ts; `defaultBranch` is the column above.
+  promptVariables String?
   /// Set when a repo with run history is retired. Archived repos keep their runs
   /// and disappear from the switcher; they are never a target for a new run.
   archivedAt    DateTime?

@@ -22,6 +22,8 @@ export type RepoFormValues = {
 	localPath: string;
 	defaultBranch: string;
 	claudeDir: string;
+	/** Every field in the form, keyed by variable name; "" means not set. */
+	promptVariables: Record<string, string>;
 };
 
 /** Reads the error message out of whatever the route returned. */

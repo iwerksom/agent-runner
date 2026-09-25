@@ -19,6 +19,18 @@ import path from "node:path";
 import type { AgentManifest, ArgSpec } from "./agents.js";
 import { ValidationError } from "./errors.js";
 import { repoRoot } from "./paths.js";
+import {
+	fillRepoVariables,
+	missingRepoVariablesError,
+	repoVariablesUsedIn,
+} from "./repoVariables.js";
+
+/** The repo a prompt is rendered for: its slug, for messages, and its variable values. */
+export type RepoPromptContext = {
+	repoSlug: string;
+	/** From `repoVariableValues(repoRow)`. */
+	repoValues: Record<string, string>;
+};
 
 /** A prompt file's frontmatter, flattened to top-level scalar lines. */
 export type ParsedPromptFile = {
@@ -307,8 +319,30 @@ function substituteSlot(body: string, spec: ArgSpec, value: string | undefined):
 }
 
 /**
- * Read the prompt body for `manifest`, substitute every declared slot, expand
- * `$ARGUMENTS`, and append the filled `contextTemplate`.
+ * The repo variables (`{{trackerProjectKey}}`, ...) this agent's prompt body and
+ * context template refer to. The Dispatcher calls it to refuse a run up front
+ * when the repo has not set one, instead of leasing a workspace first.
+ *
+ * `workspaceRoot` is where a repo-sourced prompt is read from; console prompts
+ * ignore it.
+ */
+export async function repoVariablesRequiredBy(
+	manifest: Pick<AgentManifest, "prompt" | "id" | "contextTemplate">,
+	workspaceRoot: string,
+): Promise<string[]> {
+	const raw = await readPromptSource(manifest, workspaceRoot);
+	const { promptFileBody } = parsePromptFile(raw);
+	return repoVariablesUsedIn(`${promptFileBody}\n${manifest.contextTemplate ?? ""}`);
+}
+
+/**
+ * Read the prompt body for `manifest`, fill the repo's variables, substitute
+ * every declared slot, expand `$ARGUMENTS`, and append the filled
+ * `contextTemplate`.
+ *
+ * Repo variables go first, while the body is still only what the prompt author
+ * wrote. Filling them after the arguments would also rewrite any `{{timezone}}`
+ * that happened to appear inside a submitted issue text.
  *
  * `workspaceRoot` is the leased checkout, so a repo-sourced prompt is read from
  * the same tree the agent will run against — never from a stale copy.
@@ -317,20 +351,28 @@ export async function renderPrompt(
 	manifest: AgentManifest,
 	args: Record<string, string | undefined>,
 	workspaceRoot: string,
+	repoContext: RepoPromptContext,
 ): Promise<RenderedPrompt> {
 	const resolved = validateArgs(manifest, args);
 	const raw = await readPromptSource(manifest, workspaceRoot);
 	const { promptFileBody, promptFileFrontmatter } = parsePromptFile(raw);
 	const declaredTools = parseDeclaredTools(promptFileFrontmatter["tools"]);
 
-	let body = promptFileBody;
+	const bodyFill = fillRepoVariables(promptFileBody, repoContext.repoValues);
+	const templateFill = fillRepoVariables(manifest.contextTemplate ?? "", repoContext.repoValues);
+	const missing = [...new Set([...bodyFill.missing, ...templateFill.missing])];
+	if (missing.length > 0) {
+		throw missingRepoVariablesError(manifest.id, repoContext.repoSlug, missing);
+	}
+
+	let body = bodyFill.filled;
 	for (const spec of manifest.args) {
 		body = substituteSlot(body, spec, resolved[spec.name]);
 	}
 	body = body.replaceAll("$ARGUMENTS", assembleArgumentLine(manifest, args));
 
-	if (manifest.contextTemplate !== undefined && manifest.contextTemplate !== "") {
-		const context = fillContextTemplate(manifest.contextTemplate, manifest, resolved);
+	if (templateFill.filled !== "") {
+		const context = fillContextTemplate(templateFill.filled, manifest, resolved);
 		body = `${body.trimEnd()}\n${context}`;
 	}
 

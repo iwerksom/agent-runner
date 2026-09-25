@@ -15,12 +15,29 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Agent, Repo } from "@prisma/client";
-import { manifestsForRepoSlug } from "../../../registry/index.js";
+import { registryManifests } from "../../../registry/index.js";
 import type { AgentKind, AgentManifest } from "./agents.js";
 import { prisma } from "./db.js";
 import { NotFoundError } from "./errors.js";
 import { parseJsonColumn, stringifyJsonColumn } from "./json.js";
-import { parsePromptFile } from "./prompt.js";
+import { parsePromptFile, repoVariablesRequiredBy } from "./prompt.js";
+
+/**
+ * Which library agents need each repo variable, as `{ trackerProjectKey:
+ * ["plan-week", ...] }`. The repo form shows it under each field, because "the
+ * tracker project key" means nothing until you know which agents refuse to run
+ * without it. Console prompts only: a repo-sourced prompt lives in a checkout.
+ */
+export async function repoVariableUsage(): Promise<Record<string, string[]>> {
+	const usage: Record<string, string[]> = {};
+	for (const manifest of registryManifests) {
+		if (manifest.prompt.kind !== "console") continue;
+		for (const name of await repoVariablesRequiredBy(manifest, "")) {
+			(usage[name] ??= []).push(manifest.id);
+		}
+	}
+	return usage;
+}
 
 export type SyncRegistryResult = {
 	/** Manifest ids written as "active". */
@@ -48,8 +65,7 @@ export type AgentWithManifest = {
  * where the registry may be fetched rather than bundled.
  */
 export async function loadManifests(repoSlug: string): Promise<AgentManifest[]> {
-	const declared = manifestsForRepoSlug(repoSlug);
-	return declared.filter(
+	return registryManifests.filter(
 		(manifest) => manifest.repos.includes(repoSlug) || manifest.repos.includes("*"),
 	);
 }
@@ -142,7 +158,9 @@ async function readArgumentHint(promptFilePath: string): Promise<string | undefi
 export async function syncRegistry(repoSlug: string): Promise<SyncRegistryResult> {
 	const repoRow = await prisma.repo.findUnique({ where: { slug: repoSlug } });
 	if (repoRow === null) {
-		throw new NotFoundError(`no repo row for slug "${repoSlug}"; seed it first`, { repoSlug });
+		throw new NotFoundError(`no repo "${repoSlug}"; add it on the repos page first`, {
+			repoSlug,
+		});
 	}
 
 	const manifests = await loadManifests(repoSlug);

@@ -22,19 +22,35 @@ import { RegistrySyncButton } from "@/components/RegistrySyncButton";
 import { RepoFormModal } from "@/components/RepoFormModal";
 import { RepoRemoveModal } from "@/components/RepoRemoveModal";
 import { useRepoAdmin } from "@/hooks/useRepoAdmin";
-import type { RepoDto } from "@/components/types";
+import type { PromptVariableFieldDto, RepoDto } from "@/components/types";
+
+/**
+ * The prompt values this repo has not set but some agent needs. An agent that
+ * needs one is refused at dispatch, so this is the list that explains why.
+ */
+function unsetPromptValues(
+	repo: RepoDto,
+	fields: PromptVariableFieldDto[],
+): PromptVariableFieldDto[] {
+	return fields.filter(
+		(field) => field.usedBy.length > 0 && repo.promptVariables[field.name] === undefined,
+	);
+}
 
 function RepoRow({
 	repoRowRepo,
+	repoRowPromptVariableFields,
 	repoRowOnEdit,
 	repoRowOnRemove,
 }: {
 	repoRowRepo: RepoDto;
+	repoRowPromptVariableFields: PromptVariableFieldDto[];
 	repoRowOnEdit: (repo: RepoDto) => void;
 	repoRowOnRemove: (repo: RepoDto) => void;
 }) {
 	const { repoAdminPending, repoAdminRestore } = useRepoAdmin();
 	const archived = repoRowRepo.archivedAt !== undefined;
+	const unset = unsetPromptValues(repoRowRepo, repoRowPromptVariableFields);
 
 	return (
 		<div
@@ -74,6 +90,14 @@ function RepoRow({
 						in <code className="font-mono">{repoRowRepo.claudeDir}</code>
 						{repoRowRepo.localPath === undefined ? " · no local checkout" : ""}
 					</p>
+
+					{!archived && unset.length > 0 ? (
+						<p className="text-[11px] text-warning-600">
+							Not set: {unset.map((field) => field.label).join(", ")}. Agents that use{" "}
+							{unset.length === 1 ? "it" : "them"} are refused until you add{" "}
+							{unset.length === 1 ? "it" : "them"} under Edit.
+						</p>
+					) : undefined}
 				</div>
 
 				<div className="flex flex-wrap items-center gap-2">
@@ -120,7 +144,13 @@ function RepoRow({
 	);
 }
 
-export function RepoAdminList({ repoAdminListRepos }: { repoAdminListRepos: RepoDto[] }) {
+export function RepoAdminList({
+	repoAdminListRepos,
+	repoAdminListPromptVariableFields,
+}: {
+	repoAdminListRepos: RepoDto[];
+	repoAdminListPromptVariableFields: PromptVariableFieldDto[];
+}) {
 	// `undefined` repo with the form open means "add"; a repo means "edit".
 	const [formOpen, setFormOpen] = useState(false);
 	const [editing, setEditing] = useState<RepoDto | undefined>(undefined);
@@ -148,9 +178,8 @@ export function RepoAdminList({ repoAdminListRepos }: { repoAdminListRepos: Repo
 					<p className="text-sm font-medium">No repositories registered</p>
 					<p className="max-w-md text-[11px] text-default-500">
 						Add a local checkout and Arnold will mirror it and lease a worktree per run.
-						Its agents appear once a matching{" "}
-						<code className="font-mono">registry/&lt;slug&gt;/</code> directory exists
-						and you sync.
+						The agent library is attached to every repo you add, so its agents appear as
+						soon as the repo does.
 					</p>
 				</div>
 			) : (
@@ -158,6 +187,7 @@ export function RepoAdminList({ repoAdminListRepos }: { repoAdminListRepos: Repo
 					<RepoRow
 						key={repo.slug}
 						repoRowRepo={repo}
+						repoRowPromptVariableFields={repoAdminListPromptVariableFields}
 						repoRowOnEdit={(next) => {
 							setEditing(next);
 							setFormOpen(true);
@@ -169,6 +199,7 @@ export function RepoAdminList({ repoAdminListRepos }: { repoAdminListRepos: Repo
 
 			<RepoFormModal
 				{...(editing === undefined ? {} : { repoFormModalRepo: editing })}
+				repoFormModalPromptVariableFields={repoAdminListPromptVariableFields}
 				repoFormModalIsOpen={formOpen}
 				repoFormModalOnClose={() => setFormOpen(false)}
 			/>

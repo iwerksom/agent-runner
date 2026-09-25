@@ -1,6 +1,6 @@
 /**
  * Purpose: Tailwind + HeroUI theme for the Arnold console. Mirrors the
- * example-repo setup deliberately (HeroUI 2.x plugin, darkMode "class",
+ * first target repo's setup deliberately (HeroUI 2.x plugin, darkMode "class",
  * the same inverted turquoise dark ramp) so operators moving between the two
  * apps read the same surfaces and the same semantic colours.
  *

@@ -12,14 +12,27 @@
  * Server component; every mutation is a client component below it.
  */
 
+import { REPO_SETTING_VARIABLES, repoVariableUsage } from "@arnold/core";
 import { FolderGit2 } from "lucide-react";
 import { RepoAdminList } from "@/components/RepoAdminList";
 import { fetchRepos } from "@/components/api";
+import type { PromptVariableFieldDto } from "@/components/types";
 
 export const dynamic = "force-dynamic";
 
 export default async function ReposPage() {
 	const repos = await fetchRepos({ includeArchived: true });
+
+	// The catalogue is core's, and the form is a client component that cannot
+	// import core, so it is handed down as plain data.
+	const usage = await repoVariableUsage();
+	const promptVariableFields: PromptVariableFieldDto[] = REPO_SETTING_VARIABLES.map((spec) => ({
+		name: spec.name,
+		label: spec.label,
+		description: spec.description,
+		example: spec.example,
+		usedBy: usage[spec.name] ?? [],
+	}));
 
 	const activeCount = repos.filter((repo) => repo.archivedAt === undefined).length;
 	const archivedCount = repos.length - activeCount;
@@ -43,7 +56,10 @@ export default async function ReposPage() {
 				</p>
 			</header>
 
-			<RepoAdminList repoAdminListRepos={repos} />
+			<RepoAdminList
+				repoAdminListRepos={repos}
+				repoAdminListPromptVariableFields={promptVariableFields}
+			/>
 
 			<p className="text-[11px] text-default-400">
 				A repo is where a run happens, not what it may do. What an agent is allowed to

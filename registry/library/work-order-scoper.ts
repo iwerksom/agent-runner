@@ -1,6 +1,6 @@
 /**
  * Purpose: manifest overlay for the `work-order-scoper` subagent in
- * example-repo. Read-only, so it is the safest possible first agent to run
+ * Read-only, so it is the safest possible first agent to run
  * through Arnold end to end.
  *
  * Normally this agent is spawned by /plan-week, once per survivor of that
@@ -41,7 +41,7 @@ export const manifest: AgentManifest = {
 		"Return either a REJECT line or the work order markdown. No preamble.",
 	].join("\n"),
 
-	repos: ["example-repo"],
+	repos: ["*"],
 	invocable: "direct",
 
 	args: [

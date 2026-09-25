@@ -1,6 +1,6 @@
 /**
  * Purpose: manifest overlay for the `pr-loop-analyzer` COMMAND in
- * example-repo. Diagnoses why a /fix-pr-comments loop did not converge and
+ * Diagnoses why a /fix-pr-comments loop did not converge and
  * proposes improvements. It writes one report and touches nothing else, so its
  * write scope is `artifacts`, not read-only.
  *
@@ -22,7 +22,7 @@ export const manifest: AgentManifest = {
 	kind: "command",
 	prompt: { kind: "console", path: "prompts/pr-loop-analyzer.md" },
 
-	repos: ["example-repo"],
+	repos: ["*"],
 	invocable: "direct",
 
 	args: [

@@ -4,7 +4,9 @@ State of the project as of the last working session. Written for whoever picks
 this up next, including a future you with no memory of building it.
 
 If you read only one thing: **Phase 0 completed five real agent runs in August
-2026, and nothing has run since the genericization.** Everything below is either
+2026, and nothing has run since the genericization.** As of 2026-09-25 the
+placeholders that blocked a run are filled from per-repo settings and
+`pnpm smoke` is green, so the next step is a real run. Everything below is either
 verified, or honestly marked as not.
 
 > **Correction, 2026-09-09.** Earlier versions of this file said Arnold "has
@@ -79,7 +81,19 @@ else reads from it.
   HTTP: the probe detects branch and remote and refuses a path that is not a git
   checkout, a duplicate slug and a malformed slug are both rejected with the
   reason, archive round-trips, and a repo with a run row refuses deletion.
-  `TARGET_REPO_*` now seeds the first row only.
+- **No repo is hardcoded (2026-09-25).** `TARGET_REPO_*` and the seeded first
+  row are gone; an empty database opens on an empty Agents page that links to
+  `/repos`. The agent library (`registry/library/`, all `repos: ["*"]`) attaches
+  to a repo when it is added, with no Sync press. Verified in a browser on the
+  laptop against a fresh SQLite file: add two repos, pick one in the switcher,
+  delete one, and an edit that sets and then clears a prompt value.
+- **Prompt values fill the `{{variables}}` (2026-09-25).** `Repo.promptVariables`
+  holds the tracker project key, parent issue, timezone and working hours;
+  `{{defaultBranch}}` comes from the repo column. `renderPrompt` fills them before
+  any argument, and the Dispatcher refuses a run whose repo lacks one, naming it.
+  `pnpm smoke` passes 95 checks, including every library prompt rendering with
+  nothing left unfilled. **No agent has run on this tree yet**: the laptop had no
+  API key configured.
 - **The Run modal works end to end** — verified in a real browser with a stubbed
   dispatcher: modal opens, required-argument gating behaves, submit POSTs the
   right body, modal closes, navigates to the run page.
@@ -116,20 +130,19 @@ They are the worked example for DECISIONS #16, and the reason a repo with runs
 can now only be archived.
 
 Getting one run to succeed on the current tree is still the single most valuable
-thing to do next. Start with the placeholders — see the smoke failure below.
+thing to do next. The placeholders no longer block it.
 
 ### Known broken or unfinished
 
-| Thing                                                    | Detail                                                                                                                                                                                                       |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| No auth                                                  | Phase 3. Anyone reaching the port can trigger any agent — and now also register a repo, which names a host path Arnold will clone. Keep it on localhost.                                                     |
-| Mutating agents registered without gating                | All seven reference manifests are registered, including `draft-pr` and `external-writes` tiers. The manifests exist; the role checks they assume do not.                                                     |
-| `awaiting_input` is terminal                             | An agent that stops to ask parks with the question preserved and no way to answer. Phase 4.                                                                                                                  |
-| No guarded-push helper                                   | Two manifests declare `mainBookkeeping`; the helper that validates the staged diff against declared globs is not written.                                                                                    |
-| `pre-pr-review` has no structured outcome                | It prints a summary and writes no file, so its runs show a transcript and a cost but nothing chartable.                                                                                                      |
-| 50 unfilled `{{placeholders}}` in the prompts            | `pnpm smoke <checkout>` fails `no unfilled {{placeholders}} remain`. `renderPrompt` fills `contextTemplate` only; a prompt **body** keeps its `{{defaultBranch}}` verbatim. Blocks a first run on this tree. |
-| Five runs detached from their repo                       | `repoId` is null on every historical run because the old repo row was deleted. Not recoverable; DECISIONS #16 stops it recurring.                                                                            |
-| The reference registry points at a repo you may not have | `registry/example-repo/` describes agents from one specific project. Keep them as worked examples; add your own directory.                                                                                   |
+| Thing                                               | Detail                                                                                                                                                   |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No auth                                             | Phase 3. Anyone reaching the port can trigger any agent — and now also register a repo, which names a host path Arnold will clone. Keep it on localhost. |
+| Mutating agents registered without gating           | All seven reference manifests are registered, including `draft-pr` and `external-writes` tiers. The manifests exist; the role checks they assume do not. |
+| `awaiting_input` is terminal                        | An agent that stops to ask parks with the question preserved and no way to answer. Phase 4.                                                              |
+| No guarded-push helper                              | Two manifests declare `mainBookkeeping`; the helper that validates the staged diff against declared globs is not written.                                |
+| `pre-pr-review` has no structured outcome           | It prints a summary and writes no file, so its runs show a transcript and a cost but nothing chartable.                                                  |
+| Five runs detached from their repo                  | `repoId` is null on every historical run because the old repo row was deleted. Not recoverable; DECISIONS #16 stops it recurring.                        |
+| Library agents assume Jira and a `.pr-loop/` layout | The prompts are generic in their values, not their process. An agent may still expect files or tools a given repo lacks.                                 |
 
 ---
 
@@ -140,13 +153,13 @@ In order. Each step is small and each one de-risks the next.
 1. **Point it at a repo you actually have.** Open `/repos`, press Add
    repository, and give it a local checkout with a `.claude/` directory. The path
    is probed as you type, so a typo is caught here rather than at lease time.
-   Then press Sync registry on the new row: it will list that repo's commands as
-   `unregistered`. (`TARGET_REPO_PATH` in `.env.local` plus `pnpm seed` still
-   works and is what an empty database needs, since there is no UI to add a row
-   to a database with no rows.)
-2. **Write one manifest for one read-only agent of your own**, copying the shape
-   of `registry/example-repo/work-order-scoper.ts`. Narrow `Bash` to the exact
-   invocations its prompt runs.
+   Fill in the Prompt values the agent you want to run uses (each field says
+   which agents use it). The library agents appear on the Agents page at once;
+   the repo's own `.claude/` commands show up as `unregistered`.
+2. **Start with `work-order-scoper`**, the read-only library agent. It needs only
+   the default branch. To run one of the repo's own commands instead, write a
+   manifest for it, copying the shape of `registry/library/work-order-scoper.ts`,
+   and narrow `Bash` to the exact invocations its prompt runs.
 3. **Run `pnpm smoke <your-checkout>`** before touching the UI. If prompt
    rendering is wrong, a run will succeed while doing the wrong thing.
 4. **Trigger it from the console and watch the terminal.** This is where the

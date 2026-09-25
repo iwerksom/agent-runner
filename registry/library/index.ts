@@ -1,11 +1,12 @@
 /**
- * Purpose: the manifest set for one target repo, as a static array.
+ * Purpose: the agent library, as a static array. Every manifest here declares
+ * `repos: ["*"]`, so it applies to whichever repos are registered in the
+ * console — none of them is named in code.
  *
- * This directory is a REFERENCE registry. The eight manifests below were written
- * against one specific project and are kept because between them they cover
- * every agent kind and every write scope the model supports. Read them as worked
- * examples, then add a sibling directory for your own repo and register it in
- * ../index.ts.
+ * The prompts are console-owned (`prompts/*.md`) and carry no project-specific
+ * values. What differs per repo (default branch, tracker project key, timezone,
+ * working hours) is written as a `{{variable}}` in the prompt and filled from
+ * that repo's settings at render time. See packages/core/src/repoVariables.ts.
  *
  * Hand-maintained on purpose. A dynamic fs scan of this directory cannot be
  * bundled by Next, and a registry that only resolves at runtime cannot be
@@ -32,7 +33,7 @@ import { manifest as workQueueManifest } from "./work-queue.js";
  * read-only first, external-writes last. Reading down this list should read as
  * "how much can this one break".
  */
-export const exampleRepoManifests: AgentManifest[] = [
+export const libraryManifests: AgentManifest[] = [
 	// read-only
 	workOrderScoperManifest,
 	aiSmellScanManifest,

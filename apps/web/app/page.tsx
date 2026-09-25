@@ -18,7 +18,7 @@
  * sentence in a prompt.
  */
 
-import { Bot, ShieldAlert } from "lucide-react";
+import { Bot, FolderGit2, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { AgentCard } from "@/components/AgentCard";
 import { EmptyState } from "@/components/EmptyState";
@@ -128,7 +128,21 @@ export default async function AgentsPage({
 				</div>
 			) : undefined}
 
-			{agents.length === 0 ? (
+			{repos.length === 0 && staleSelection === undefined ? (
+				<EmptyState
+					emptyStateTitle="No repositories yet"
+					emptyStateDescription="Agents run against a repository. Add one, and every agent in the library is attached to it."
+					emptyStateIcon={<FolderGit2 className="h-6 w-6" />}
+					emptyStateAction={
+						<Link
+							href="/repos"
+							className="rounded-medium bg-primary px-3 py-2 text-xs font-medium text-primary-foreground"
+						>
+							Add a repository
+						</Link>
+					}
+				/>
+			) : agents.length === 0 ? (
 				<EmptyState
 					emptyStateTitle="No agents registered"
 					emptyStateDescription="Arnold discovers agents by reconciling a repo's .claude directory against the registry. Sync a repo to pick up its commands and subagents."

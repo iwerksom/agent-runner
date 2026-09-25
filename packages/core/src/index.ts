@@ -19,8 +19,10 @@ export * from "./errors.js";
 // cwd differs per entry point: apps/web for `pnpm dev`, packages/core for seed.
 export * from "./paths.js";
 
-// Target repositories: onboarding, editing and retirement.
+// Target repositories: onboarding, editing and retirement, and the per-repo
+// values a prompt's {{variables}} take.
 export * from "./repos.js";
+export * from "./repoVariables.js";
 
 // Registry reconciliation and prompt rendering.
 export * from "./registry.js";

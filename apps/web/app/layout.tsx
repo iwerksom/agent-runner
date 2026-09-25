@@ -1,6 +1,6 @@
 /**
  * Purpose: root layout. Sets the dark theme on <html> (the console is dark by
- * default, matching example-repo), mounts the client provider boundary and
+ * default, matching the first target repo), mounts the client provider boundary and
  * the top nav, and constrains every page to one content column.
  *
  * Server component. It is async because the nav carries the repo switcher, which

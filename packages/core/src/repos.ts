@@ -3,11 +3,10 @@
  * operator action in the console rather than an edit to `.env.local` followed by
  * `pnpm seed`.
  *
- * `scripts/seed.ts` still seeds one repo from `TARGET_REPO_*`, because a fresh
- * database needs a row before there is a UI to add one from. Everything after
- * that first row goes through here. Both paths converge on the same upsert, so a
- * repo added in the console and a repo seeded from the environment are
- * indistinguishable afterwards.
+ * This is the only way a repo comes into existence. No repo is named in code and
+ * none is seeded from the environment: an empty database opens on an empty
+ * repos page with an Add repository button, and the agent library attaches
+ * itself to each repo as it is added.
  *
  * Two rules this module exists to enforce:
  *
@@ -29,14 +28,18 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { prisma } from "./db.js";
 import { NotFoundError, ValidationError } from "./errors.js";
+import { parseJsonColumn, stringifyJsonColumn } from "./json.js";
+import { syncRegistry } from "./registry.js";
+import { normalisePromptVariables } from "./repoVariables.js";
 import { discardRepoWorkspaces } from "./workspace.js";
 
 const execFileAsync = promisify(execFile);
 
 /**
- * A slug is a directory name under `registry/`, so it has to survive being one.
- * Lowercase because `registry/Foo` and `registry/foo` are the same directory on
- * Windows and macOS and two different ones on Linux.
+ * A slug names the repo's bare mirror directory under the workspace root and
+ * appears in URLs, so it has to survive being both. Lowercase because `Foo` and
+ * `foo` are the same directory on Windows and macOS and two different ones on
+ * Linux.
  */
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/;
 
@@ -69,6 +72,12 @@ export type RepoInput = {
 	localPath?: string;
 	defaultBranch: string;
 	claudeDir: string;
+	/**
+	 * Values for the prompt `{{variables}}` in `REPO_SETTING_VARIABLES`. On an
+	 * update this replaces the whole set: the form always sends every field, and
+	 * an emptied field is how a value is unset.
+	 */
+	promptVariables?: Record<string, string>;
 };
 
 /** Every field optional: a PATCH changes only what the operator edited. */
@@ -200,7 +209,7 @@ async function sameDirectory(left: string, right: string): Promise<boolean> {
 	}
 }
 
-/** Rejects anything that would break `registry/<slug>/` or a URL path segment. */
+/** Rejects anything that would break a mirror directory name or a URL path segment. */
 function assertValidSlug(slug: string): void {
 	if (!SLUG_RE.test(slug)) {
 		throw new ValidationError(
@@ -230,6 +239,7 @@ async function validateRepoInput(input: RepoInput): Promise<CheckoutProbe | unde
 	assertNonEmpty(input.remoteUrl, "Remote URL");
 	assertNonEmpty(input.defaultBranch, "Default branch");
 	assertNonEmpty(input.claudeDir, "Prompt directory");
+	normalisePromptVariables(input.promptVariables);
 
 	if (input.localPath === undefined || input.localPath.trim() === "") return undefined;
 
@@ -243,10 +253,14 @@ async function validateRepoInput(input: RepoInput): Promise<CheckoutProbe | unde
 	return probe;
 }
 
-/** Normalised fields ready for a Prisma write. `localPath` is null, never "". */
-function repoFieldsOf(
-	input: RepoInput,
-): Omit<RepoInput, "localPath"> & { localPath: string | null } {
+/**
+ * Normalised fields ready for a Prisma write. `localPath` is null, never "", and
+ * `promptVariables` is the JSON-TEXT column value.
+ */
+function repoFieldsOf(input: RepoInput): Omit<RepoInput, "localPath" | "promptVariables"> & {
+	localPath: string | null;
+	promptVariables: string;
+} {
 	const localPath =
 		input.localPath === undefined || input.localPath.trim() === ""
 			? null
@@ -258,30 +272,36 @@ function repoFieldsOf(
 		localPath,
 		defaultBranch: input.defaultBranch.trim(),
 		claudeDir: input.claudeDir.trim(),
+		promptVariables: stringifyJsonColumn(normalisePromptVariables(input.promptVariables)),
 	};
 }
 
+/**
+ * Registers a repo and attaches the agent library to it, so the new repo's
+ * agents are on the agents page the moment the form closes rather than after a
+ * separate Sync registry press.
+ */
 export async function createRepo(input: RepoInput): Promise<{ slug: string }> {
 	await validateRepoInput(input);
 
 	const existing = await prisma.repo.findUnique({ where: { slug: input.slug } });
 	if (existing !== null) {
 		throw new ValidationError(
-			`A repo with slug "${input.slug}" already exists. Slugs are how manifests name their repos, so they have to be unique.`,
+			`A repo with slug "${input.slug}" already exists. Slugs identify a repo in URLs and on disk, so they have to be unique.`,
 			{ slug: input.slug },
 		);
 	}
 
 	const { slug, ...fields } = repoFieldsOf(input);
 	const created = await prisma.repo.create({ data: { slug, ...fields } });
+	await syncRegistry(created.slug);
 	return { slug: created.slug };
 }
 
 /**
- * Updates a repo in place. The slug is immutable: manifests name their repos by
- * slug and `registry/<slug>/` is a directory on disk, so renaming one here would
- * orphan every manifest that points at it. Delete and re-add is the honest path,
- * and it forces the registry directory to be renamed too.
+ * Updates a repo in place. The slug is immutable: it names the repo's mirror on
+ * disk and every run's `repo:<slug>` ledger scope, and URLs shared with it in
+ * them would silently stop resolving. Delete and re-add is the honest path.
  *
  * Changing where the code comes from is not an ordinary field edit. The bare
  * mirror is cloned once and keyed by slug, and `ensureMirror` refreshes it by
@@ -303,6 +323,9 @@ export async function updateRepo(slug: string, patch: RepoPatch): Promise<{ slug
 		localPath: patch.localPath ?? existing.localPath ?? undefined,
 		defaultBranch: patch.defaultBranch ?? existing.defaultBranch,
 		claudeDir: patch.claudeDir ?? existing.claudeDir,
+		promptVariables:
+			patch.promptVariables ??
+			parseJsonColumn<Record<string, string>>(existing.promptVariables, {}),
 	};
 	await validateRepoInput(merged);
 

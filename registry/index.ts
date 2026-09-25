@@ -1,17 +1,16 @@
 /**
- * Purpose: slug -> manifest array, the one place the runtime looks up which
- * agents exist for a repo. `syncRegistry` reconciles this map against a repo's
- * `.claude` directory; nothing else reads the registry directory directly.
+ * Purpose: every manifest Arnold knows, the one place the runtime looks up which
+ * agents exist. `syncRegistry` filters this list by each manifest's `repos`
+ * field and reconciles it against a repo's `.claude` directory; nothing else
+ * reads the registry directory directly.
+ *
+ * Repos are not named here. They live in the database and are added, selected
+ * and removed from the console, so a manifest reaches a repo through
+ * `repos: ["*"]` (or, for an agent that only makes sense on one project, that
+ * project's slug in its own manifest), never through a slug-keyed map in code.
  */
 
 import type { AgentManifest } from "@arnold/core";
-import { exampleRepoManifests } from "./example-repo/index.js";
+import { libraryManifests } from "./library/index.js";
 
-export const registryManifestsBySlug: Record<string, AgentManifest[]> = {
-	"example-repo": exampleRepoManifests,
-};
-
-/** Empty array for an unknown slug: a repo with no registered agents is valid. */
-export function manifestsForRepoSlug(repoSlug: string): AgentManifest[] {
-	return registryManifestsBySlug[repoSlug] ?? [];
-}
+export const registryManifests: AgentManifest[] = [...libraryManifests];

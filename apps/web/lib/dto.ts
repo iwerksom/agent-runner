@@ -63,10 +63,24 @@ export type RepoDto = {
 	defaultBranch: string;
 	/** Where registry sync looks for this repo's own prompt files. */
 	claudeDir: string;
+	/** Values for the prompt `{{variables}}` stored on the repo; unset ones are absent. */
+	promptVariables: Record<string, string>;
 	agentCount: number;
 	runCount: number;
 	/** ISO timestamp when the repo was retired, absent while it is active. */
 	archivedAt?: string;
+};
+
+/**
+ * One editable prompt value on the repo form: core's `REPO_SETTING_VARIABLES`
+ * entry plus the library agents whose prompts use it.
+ */
+export type PromptVariableFieldDto = {
+	name: string;
+	label: string;
+	description: string;
+	example: string;
+	usedBy: string[];
 };
 
 export type RunOutcomeDto = {
@@ -169,6 +183,7 @@ export type RepoRowForDto = {
 	localPath: string | null;
 	defaultBranch: string;
 	claudeDir: string;
+	promptVariables: string | null;
 	archivedAt: Date | null;
 	_count?: { agents?: number; runs?: number };
 };
@@ -301,6 +316,7 @@ export function mapRepo(row: RepoRowForDto): RepoDto {
 		localPath: row.localPath ?? undefined,
 		defaultBranch: row.defaultBranch,
 		claudeDir: row.claudeDir,
+		promptVariables: parseJsonColumn<Record<string, string>>(row.promptVariables, {}),
 		agentCount: row._count?.agents ?? 0,
 		runCount: row._count?.runs ?? 0,
 		...(row.archivedAt === null ? {} : { archivedAt: toIso(row.archivedAt) }),

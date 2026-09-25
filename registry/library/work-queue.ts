@@ -1,5 +1,5 @@
 /**
- * Purpose: manifest overlay for the `/work-queue` command in example-repo.
+ * Purpose: manifest overlay for the `/work-queue` agent.
  * Executes queued work orders unattended: branch, implement, verify, commit,
  * push, open a draft PR, then move to the next.
  *
@@ -30,7 +30,7 @@ export const manifest: AgentManifest = {
 	kind: "command",
 	prompt: { kind: "console", path: "prompts/work-queue.md" },
 
-	repos: ["example-repo"],
+	repos: ["*"],
 	invocable: "direct",
 
 	// Phase 4 registers the mutating agents; Phase 3 is what makes them safe to

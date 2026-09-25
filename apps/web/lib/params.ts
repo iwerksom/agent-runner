@@ -87,6 +87,8 @@ export const createRepoBodySchema = z.object({
 	localPath: z.string().optional(),
 	defaultBranch: z.string().min(1).default("main"),
 	claudeDir: z.string().min(1).default(".claude"),
+	/** Names are checked against the catalogue in core, not here. */
+	promptVariables: z.record(z.string(), z.string()).optional(),
 });
 export type CreateRepoBody = z.infer<typeof createRepoBodySchema>;
 
@@ -98,6 +100,7 @@ export const updateRepoBodySchema = z
 		localPath: z.string().optional(),
 		defaultBranch: z.string().min(1).optional(),
 		claudeDir: z.string().min(1).optional(),
+		promptVariables: z.record(z.string(), z.string()).optional(),
 	})
 	.refine((patch) => Object.keys(patch).length > 0, {
 		message: "No fields to update.",

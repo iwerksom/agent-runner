@@ -43,24 +43,20 @@ only the components behind that sentence get replaced.
 nvm use                # 22.22.3
 npm i -g pnpm          # if you do not have it
 cp .env.example .env.local
-# fill in ANTHROPIC_API_KEY and check TARGET_REPO_PATH
+# fill in ANTHROPIC_API_KEY
 pnpm env:check         # confirms the env file is found before anything else runs
-pnpm setup             # install, prisma generate, db push, seed
-pnpm dev               # http://localhost:3000
+pnpm setup             # install, prisma generate, db push, seed the operator
+pnpm dev               # http://localhost:3000, then add a repo at /repos
 ```
 
-`pnpm setup` seeds one repo row from `TARGET_REPO_PATH` and reconciles the
-registry against that checkout's `.claude/` directory. Any command or subagent it
-finds without a manifest overlay shows up as `unregistered`: visible, and not
-runnable until someone declares what it may change.
+No repo is named in code or in the env file. A fresh console opens on an empty
+Agents page that sends you to [/repos](http://localhost:3000/repos).
 
-### Adding more repos
+### Repositories
 
-`TARGET_REPO_*` seeds the **first** row only — an empty database has no console
-to add a row from. After that, repositories are managed at
-[/repos](http://localhost:3000/repos): add, edit, archive, restore, remove. The
-switcher in the top bar scopes the Agents and Runs screens to one repo or shows
-them all.
+Repositories are managed at [/repos](http://localhost:3000/repos): add, edit,
+archive, restore, remove. The switcher in the top bar picks which repo the Agents
+and Runs screens show, or shows them all.
 
 The local checkout path is probed as you type. A path that does not exist or is
 not a git checkout is refused there, with the reason — the alternative is a repo
@@ -68,9 +64,21 @@ row that looks fine in the list and fails inside a workspace lease several
 minutes into a run. The probe also reads the checkout's own branch and remote and
 offers them as defaults.
 
-A repo's agents come from `registry/<slug>/`, so a newly added repo has none
-until that directory exists and is registered in `registry/index.ts`. Registering
-a repo is what makes it a target; declaring manifests is what gives it agents.
+Every agent in the library (`registry/library/`) declares `repos: ["*"]`, so it
+is attached to a repo the moment the repo is added. Sync registry also picks up
+the repo's own `.claude/` commands and subagents; one without a manifest overlay
+shows up as `unregistered`: visible, and not runnable until someone declares what
+it may change.
+
+**Prompt values.** The library prompts are generic. What differs per repo is
+written as a `{{variable}}` and filled from the repo's settings when a run
+starts: `{{defaultBranch}}` from the default-branch field, and
+`{{trackerProjectKey}}`, `{{trackerParentIssue}}`, `{{timezone}}` and
+`{{workingHours}}` from the Prompt values section of the repo form. An agent
+whose prompt needs a value the repo has not set is refused at dispatch, with a
+message naming the value, and the repos list shows which values are missing. The
+catalogue of variables is `packages/core/src/repoVariables.ts`; adding one there
+adds its field to the form.
 
 Removal is two operations. **Archive** keeps every run, artifact and outcome and
 just takes the repo out of the switcher; it is always available and reversible.
@@ -141,22 +149,21 @@ offline box). Two scripts cover that case:
 
 ```bash
 pnpm typecheck:offline   # generates a type stub from schema.prisma, then tsc
-pnpm smoke ../example-repo   # exercises prompt rendering + tool policy for real
+pnpm smoke ../any-checkout   # exercises prompt rendering + tool policy for real
 pnpm check:rsc           # catches the RSC/HeroUI trap below; also runs in pnpm build
 ```
 
-`pnpm smoke` is the useful one. It renders every registered agent's prompt from
-the actual files in a checkout and asserts the substitutions landed, then throws
+`pnpm smoke` is the useful one. It renders the library prompts for a made-up
+repo, asserts every argument and `{{variable}}` substitution landed, then throws
 a batch of tool calls at the write-scope gate and asserts the right ones are
 refused. A prompt whose `<PR>` token never got substituted still runs; it just
 analyses the wrong PR. That class of bug is invisible without this.
 
-## The bundled registry is a set of examples
+## The agent library
 
-`registry/example-repo/` holds eight manifests written against one specific
-project. That project is not the point: read them as worked examples and
-templates, then add a sibling directory for your own repo and register it in
-`registry/index.ts`.
+`registry/library/` holds eight manifests. They were first written against one
+project and have since been made generic: their prompts live in `prompts/` and
+read every project-specific value from the repo's prompt values.
 
 They are worth reading because between them they cover every agent kind and
 every write scope the model supports:
@@ -178,8 +185,8 @@ ones that write to a real remote. See [`docs/HANDOVER.md`](docs/HANDOVER.md).
 
 ## The thing worth understanding before adding an agent
 
-Every agent in `example-repo/.claude/` enforces its own limits with **prompt
-text only**. Command files carry no `tools:` frontmatter at all, and the two
+Every agent in the project these prompts came from enforced its own limits with
+**prompt text only**. Command files carry no `tools:` frontmatter at all, and the two
 subagents declare unrestricted `Bash`. `ai-smell-scan` says "You have no write
 tools" and `work-order-scoper` says "you do not run git write commands", and
 nothing stops either of them.
@@ -205,7 +212,9 @@ and hoped for:
 1. Write it in the target repo under `.claude/commands/` or `.claude/agents/`,
    with an `argument-hint` that matches the slots the body actually reads.
 2. Hit registry sync. It appears as `unregistered`.
-3. Add `registry/<repo-slug>/<id>.ts` with the manifest overlay. Narrow `Bash`
+3. Add `registry/library/<id>.ts` with the manifest overlay and list it in
+   `registry/library/index.ts`. Use `repos: ["*"]` unless the prompt is repo
+   sourced and only one repo has it; then name that repo's slug. Narrow `Bash`
    to the specific invocations the prompt runs; a bare `Bash` means the declared
    write scope is fiction.
 4. Give it structured output if it has none: a fenced JSON block, a JSONL
@@ -224,8 +233,8 @@ arnold/
   packages/core/          types, store, and every runtime module
     prisma/schema.prisma  SQLite in Phase 0, Postgres in Phase 1
     src/agents.ts         the manifest contract; read this first
-  registry/               manifest overlays, one directory per repo
-    example-repo/
+  registry/library/       the agent library, attached to every repo
+  prompts/                the library's prompt bodies, with {{variables}}
   apps/web/               Next.js: UI + API routes + the SSE relay
   scripts/                seed, smoke test, offline type stub
 ```

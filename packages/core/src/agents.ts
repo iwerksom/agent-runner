@@ -10,7 +10,7 @@
  * The repo stays the source of truth for what an agent does; the manifest adds
  * the metadata those files do not carry.
  *
- * See docs/architecture.md sections 5 to 9 in example-repo.
+ * See docs/architecture.md sections 5 to 9.
  */
 
 /** Slash command, subagent, fan-out script, or a prompt Arnold owns itself. */
@@ -55,7 +55,7 @@ export type MainBookkeeping = { paths: string[] };
 
 /**
  * How the declared scope is actually enforced. Every agent in
- * example-repo starts at "prompt-only": command files carry no `tools:`
+ * the first target repo started at "prompt-only": command files carry no `tools:`
  * frontmatter at all, and the two subagents declare unrestricted `Bash`. So
  * "read-only" is a sentence in a prompt until a manifest makes it real.
  * This field is a to-do list, not a description.

@@ -13,8 +13,9 @@ import { prisma } from "./db.js";
 import { BudgetError, ExecutionModeError, NotFoundError, ValidationError } from "./errors.js";
 import { stringifyJsonColumn } from "./json.js";
 import { checkBudget } from "./ledger.js";
-import { validateArgs } from "./prompt.js";
+import { repoVariablesRequiredBy, validateArgs } from "./prompt.js";
 import { getAgentWithManifest } from "./registry.js";
+import { missingRepoVariablesError, repoVariableValues } from "./repoVariables.js";
 import { runAgent } from "./runner.js";
 
 export type DispatchRunInput = {
@@ -83,6 +84,17 @@ export async function dispatchRun(input: DispatchRunInput): Promise<DispatchRunR
 
 	// Throws ValidationError listing what is missing or mistyped.
 	const resolvedArgs = validateArgs(agentManifest, args);
+
+	// A console prompt is readable now, without a workspace, so a repo that has
+	// not set a value the prompt needs is refused here with a pointer to the
+	// repos page. A repo-sourced prompt only exists inside the leased checkout;
+	// `renderPrompt` applies the same check to it once the lease is taken.
+	if (agentManifest.prompt.kind === "console") {
+		const required = await repoVariablesRequiredBy(agentManifest, "");
+		const values = repoVariableValues(repoRow);
+		const missing = required.filter((name) => values[name] === undefined);
+		if (missing.length > 0) throw missingRepoVariablesError(agentId, repoSlug, missing);
+	}
 
 	const execution = effectiveExecution(agentManifest, resolvedArgs);
 	if (execution !== "unattended") {

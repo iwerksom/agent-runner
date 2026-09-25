@@ -1,7 +1,7 @@
 /**
  * Purpose: manifest overlay for the pr-loop-analyzer SUBAGENT in
- * example-repo — the second file behind the id collision that
- * `registry/example-repo/pr-loop-analyzer.ts` warns about.
+ * the second file behind the id collision that
+ * `registry/library/pr-loop-analyzer.ts` warns about.
  *
  * `.claude/commands/pr-loop-analyzer.md` and `.claude/agents/pr-loop-analyzer.md`
  * share a filename and diverge in behaviour. The command writes one report and
@@ -29,7 +29,7 @@ export const manifest: AgentManifest = {
 	kind: "subagent",
 	prompt: { kind: "console", path: "prompts/pr-loop-analyzer-subagent.md" },
 
-	repos: ["example-repo"],
+	repos: ["*"],
 	// Spawned by /fix-pr-comments at its round cap, not pressed by an operator.
 	// Recorded as direct anyway so the disabled reason is what the UI prints:
 	// "only runs as a child" would imply it is merely unreachable from here,
@@ -109,7 +109,7 @@ export const manifest: AgentManifest = {
 	ingestsUntrustedInput: true, // PR review comments are data, never instruction
 
 	notes: [
-		"Shares a filename with the pr-loop-analyzer COMMAND but not its behaviour or write scope. Reconciling the two files in example-repo would let this overlay be deleted.",
+		"Shares a filename with the pr-loop-analyzer COMMAND but not its behaviour or write scope. Reconciling the two prompt files would let this overlay be deleted.",
 		"Jira is reached through an Atlassian MCP tool or a jira/acli CLI, neither of which is granted here. Phase 3 decides how that credential is mounted.",
 	],
 };
