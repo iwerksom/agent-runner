@@ -13,6 +13,12 @@ phase replaces a component behind that sentence without rewriting the shape.
 Design detail lives in `docs/architecture.md`. Current build state, including
 what is verified and what is known broken, lives in `docs/HANDOVER.md`.
 
+> **Pending rewrite (2026-09-28).** `docs/architecture.md` Section 0 re-scopes
+> Arnold as a vendor-agnostic team tool, and DECISIONS #21 to #25 record why.
+> The phases below still name Redis, BullMQ and the Agent SDK as the execution
+> layer; where they do, Section 0's order of work supersedes them: harness spike,
+> gateway, sandbox, Postgres queue, registry split, findings, auth.
+
 ---
 
 ## Phase 0: POC (execute, stream, record, collect)
