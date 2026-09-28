@@ -136,8 +136,8 @@ async function readArgumentHint(promptFilePath: string): Promise<string | undefi
 }
 
 /**
- * Reconcile the registry for one repo. Safe to run repeatedly; it is the seed
- * script's only job and the console's "rescan" button.
+ * Reconcile the registry for one repo. Safe to run repeatedly; `createRepo` runs
+ * it when a repo is added, and the console's Sync registry button re-runs it.
  */
 export async function syncRegistry(repoSlug: string): Promise<SyncRegistryResult> {
 	const repoRow = await prisma.repo.findUnique({ where: { slug: repoSlug } });

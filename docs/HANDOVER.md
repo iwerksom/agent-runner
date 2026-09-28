@@ -79,7 +79,8 @@ else reads from it.
   HTTP: the probe detects branch and remote and refuses a path that is not a git
   checkout, a duplicate slug and a malformed slug are both rejected with the
   reason, archive round-trips, and a repo with a run row refuses deletion.
-  `TARGET_REPO_*` now seeds the first row only.
+  No repo is seeded: `/repos` is the only way one is added, and saving a repo
+  syncs its agents.
 - **The Run modal works end to end** — verified in a real browser with a stubbed
   dispatcher: modal opens, required-argument gating behaves, submit POSTs the
   right body, modal closes, navigates to the run page.
@@ -140,10 +141,9 @@ In order. Each step is small and each one de-risks the next.
 1. **Point it at a repo you actually have.** Open `/repos`, press Add
    repository, and give it a local checkout with a `.claude/` directory. The path
    is probed as you type, so a typo is caught here rather than at lease time.
-   Then press Sync registry on the new row: it will list that repo's commands as
-   `unregistered`. (`TARGET_REPO_PATH` in `.env.local` plus `pnpm seed` still
-   works and is what an empty database needs, since there is no UI to add a row
-   to a database with no rows.)
+   Saving it syncs the registry, which lists that repo's commands as
+   `unregistered`. This works on an empty database; nothing needs seeding first
+   except the operator, which `pnpm setup` creates.
 2. **Write one manifest for one read-only agent of your own**, copying the shape
    of `registry/example-repo/work-order-scoper.ts`. Narrow `Bash` to the exact
    invocations its prompt runs.

@@ -1,14 +1,20 @@
 /**
- * Purpose: smoke-test the two modules that have no database dependency, against
- * the REAL prompt files in the example-repo checkout. These are the parts
- * most likely to be silently wrong: a prompt whose `<PR>` token never got
- * substituted still runs, it just analyses the wrong PR, and a tool policy that
- * fails open looks identical to one that works until an agent writes something.
+ * Purpose: smoke-test the modules that have no database dependency, against the
+ * REAL prompt files Arnold owns. These are the parts most likely to be silently
+ * wrong: a prompt whose `<PR>` token never got substituted still runs, it just
+ * analyses the wrong PR, and a tool policy that fails open looks identical to one
+ * that works until an agent writes something.
  *
- * Run: npx tsx scripts/smoke.ts <path-to-example-repo-checkout>
- * Exits non-zero on the first failed assertion.
+ * The checkout argument is the workspace the write-scope checks resolve paths
+ * against. Any git checkout will do; nothing here depends on what is in it.
+ *
+ * Run: pnpm smoke <path-to-any-git-checkout>
+ * Exits non-zero if any assertion failed.
  */
 
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import {
 	isRunAuthoredArtifact,
 	resolveReportVerdict,
@@ -16,8 +22,9 @@ import {
 } from "../packages/core/src/collect.js";
 import { atLeast } from "../packages/core/src/agents.js";
 import { extractRunTicketKeys, extractTicketKeys } from "../packages/core/src/notary.js";
-import { renderPrompt, validateArgs } from "../packages/core/src/prompt.js";
+import { preflightPromptValues, renderPrompt, validateArgs } from "../packages/core/src/prompt.js";
 import { buildCanUseTool } from "../packages/core/src/writeScope.js";
+import { registryManifestsBySlug } from "../registry/index.js";
 import { manifest as aiSmellScan } from "../registry/example-repo/ai-smell-scan.js";
 import { manifest as fixPrComments } from "../registry/example-repo/fix-pr-comments.js";
 import { manifest as analyzerSubagent } from "../registry/example-repo/pr-loop-analyzer-subagent.js";
@@ -29,7 +36,7 @@ import { manifest as workQueue } from "../registry/example-repo/work-queue.js";
 
 const checkout = process.argv[2];
 if (checkout === undefined) {
-	console.error("usage: tsx scripts/smoke.ts <path-to-example-repo-checkout>");
+	console.error("usage: pnpm smoke <path-to-any-git-checkout>");
 	process.exit(2);
 }
 
@@ -146,11 +153,18 @@ console.log("\n[5] write scope: artifacts-scoped pr-loop-analyzer writes only it
 
 console.log("\n[6] artifact scoping: a run claims its own output, not the checkout's");
 {
-	// Run against the real checkout, because that is where this failed:
-	// `.pr-loop/reports/PR-*.md` is dozens of tracked files in example-repo,
-	// and collecting all of them attributed seven reports to a run that wrote one.
+	// This failed against a real checkout: `.pr-loop/reports/PR-*.md` was dozens
+	// of tracked files in the first target repo, and collecting all of them
+	// attributed seven reports to a run that wrote one. The fixture rebuilds that
+	// shape in a temp directory, so the check does not depend on which checkout
+	// smoke was pointed at.
+	const fixture = await mkdtemp(path.join(os.tmpdir(), "arnold-smoke-artifacts-"));
+	await mkdir(path.join(fixture, ".pr-loop", "reports"), { recursive: true });
+	for (const name of ["PR-101-analyzer.md", "PR-102-analyzer.md"]) {
+		await writeFile(path.join(fixture, ".pr-loop", "reports", name), "# pre-existing report\n");
+	}
 	const globs = analyzer.artifactGlobs;
-	const baseline = await snapshotArtifacts(checkout, globs);
+	const baseline = await snapshotArtifacts(fixture, globs);
 	check(
 		"the checkout already matches the analyzer's globs",
 		baseline.size > 1,
@@ -181,6 +195,7 @@ console.log("\n[6] artifact scoping: a run claims its own output, not the checko
 		"no baseline collects everything, so the old behaviour is intact",
 		isRunAuthoredArtifact(undefined, ".pr-loop/reports/PR-455-analyzer.md", 1),
 	);
+	await rm(fixture, { recursive: true, force: true });
 }
 
 console.log("\n[7] global tool denial: PowerShell is refused ahead of the allow-list");
@@ -545,6 +560,44 @@ console.log("\n[13] Phase 0 hold: nothing above `artifacts` may be triggerable")
 	// The two that carry Phase 0 must stay pressable, or the hold has overreached.
 	check("work-order-scoper is still runnable", scoper.disabled === undefined);
 	check("pr-loop-analyzer is still runnable", analyzer.disabled === undefined);
+}
+
+console.log("\n[14] every registered console prompt renders with no {{placeholder}} left");
+{
+	// Walks the registry rather than naming agents, so a manifest added under any
+	// repo slug is covered the day it lands. Console prompts need no checkout;
+	// repo-sourced prompts are skipped here because they only exist inside the
+	// target repo, and the Runner applies the same check once the lease is taken.
+	for (const [repoSlug, manifests] of Object.entries(registryManifestsBySlug)) {
+		for (const manifest of manifests) {
+			if (manifest.prompt.kind !== "console") continue;
+			let refusal: string | undefined;
+			try {
+				await preflightPromptValues(manifest);
+			} catch (caught: unknown) {
+				refusal = caught instanceof Error ? caught.message : String(caught);
+			}
+			check(
+				`${repoSlug}/${manifest.id} has a value for every placeholder`,
+				refusal === undefined,
+				refusal,
+			);
+		}
+	}
+
+	// And the refusal fires when one is missing, naming what to add.
+	const withoutValues = { ...planWeek, values: {} };
+	let refusal = "";
+	try {
+		await preflightPromptValues(withoutValues);
+	} catch (caught: unknown) {
+		refusal = caught instanceof Error ? caught.message : String(caught);
+	}
+	check(
+		"a manifest missing its values is refused before any workspace exists",
+		refusal.includes("{{defaultBranch}}") && refusal.includes("values"),
+		`got ${JSON.stringify(refusal)}`,
+	);
 }
 
 console.log(

@@ -99,8 +99,8 @@ path on the host. Treat the remaining work as gating, not building.
 - Adding a command to a target repo's `.claude/commands/` and hitting sync makes
   it appear as `unregistered` with no console code change.
 - [x] A repo is registered, edited and retired from the console, with no edit to
-      `.env.local` and no re-run of `pnpm seed`. `TARGET_REPO_*` seeds the first
-      row only, because an empty database has no UI to add one from.
+      `.env.local` and no re-run of `pnpm seed`. No repo is seeded at all:
+      `/repos` works on an empty database, and saving a repo syncs its agents.
 - [x] A candidate checkout is probed before it is accepted: a path that does not
       exist or is not a git checkout is refused at registration time, with the
       reason, rather than failing inside a workspace lease minutes into a run.

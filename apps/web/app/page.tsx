@@ -128,15 +128,29 @@ export default async function AgentsPage({
 				</div>
 			) : undefined}
 
-			{agents.length === 0 ? (
+			{agents.length === 0 && repoOrder.length === 0 ? (
+				<EmptyState
+					emptyStateTitle="No repos yet"
+					emptyStateDescription="Agents belong to a target repo. Add one, and its agents are synced from the registry as it is saved."
+					emptyStateIcon={<Bot className="h-6 w-6" />}
+					emptyStateAction={
+						<Link
+							href="/repos"
+							className="rounded-medium border border-default-200 px-3 py-2 text-xs text-default-500 transition-colors hover:text-foreground"
+						>
+							Add a repository
+						</Link>
+					}
+				/>
+			) : undefined}
+
+			{agents.length === 0 && repoOrder[0] !== undefined ? (
 				<EmptyState
 					emptyStateTitle="No agents registered"
 					emptyStateDescription="Arnold discovers agents by reconciling a repo's .claude directory against the registry. Sync a repo to pick up its commands and subagents."
 					emptyStateIcon={<Bot className="h-6 w-6" />}
 					emptyStateAction={
-						repoOrder[0] ? (
-							<RegistrySyncButton registrySyncButtonRepoSlug={repoOrder[0].slug} />
-						) : undefined
+						<RegistrySyncButton registrySyncButtonRepoSlug={repoOrder[0].slug} />
 					}
 				/>
 			) : undefined}

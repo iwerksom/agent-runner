@@ -43,24 +43,27 @@ only the components behind that sentence get replaced.
 nvm use                # 22.22.3
 npm i -g pnpm          # if you do not have it
 cp .env.example .env.local
-# fill in ANTHROPIC_API_KEY and check TARGET_REPO_PATH
+# fill in ANTHROPIC_API_KEY
 pnpm env:check         # confirms the env file is found before anything else runs
 pnpm setup             # install, prisma generate, db push, seed
 pnpm dev               # http://localhost:3000
 ```
 
-`pnpm setup` seeds one repo row from `TARGET_REPO_PATH` and reconciles the
-registry against that checkout's `.claude/` directory. Any command or subagent it
-finds without a manifest overlay shows up as `unregistered`: visible, and not
-runnable until someone declares what it may change.
+`pnpm setup` creates the database and one operator. No repo is seeded: open
+[/repos](http://localhost:3000/repos) and add one. Saving it syncs the registry
+against that checkout's `.claude/` directory, so any command or subagent found
+without a manifest overlay shows up as `unregistered` straight away: visible, and
+not runnable until someone declares what it may change.
 
-### Adding more repos
+### Managing repos
 
-`TARGET_REPO_*` seeds the **first** row only — an empty database has no console
-to add a row from. After that, repositories are managed at
-[/repos](http://localhost:3000/repos): add, edit, archive, restore, remove. The
-switcher in the top bar scopes the Agents and Runs screens to one repo or shows
-them all.
+Repositories are managed only at [/repos](http://localhost:3000/repos): add,
+edit, archive, restore, remove. It works on an empty database, and the Agents
+page links to it until a repo exists. The switcher in the top bar scopes the
+Agents and Runs screens to one repo or shows them all.
+
+The `TARGET_REPO_*` variables that used to seed the first repo are retired;
+`pnpm seed` warns if it still finds them in `.env.local`.
 
 The local checkout path is probed as you type. A path that does not exist or is
 not a git checkout is refused there, with the reason — the alternative is a repo

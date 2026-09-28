@@ -14,7 +14,7 @@ import { prisma } from "./db.js";
 import { BudgetError, ExecutionModeError, NotFoundError, ValidationError } from "./errors.js";
 import { stringifyJsonColumn } from "./json.js";
 import { checkBudget } from "./ledger.js";
-import { validateArgs } from "./prompt.js";
+import { preflightPromptValues, validateArgs } from "./prompt.js";
 import { getAgentWithManifest } from "./registry.js";
 import { runAgent } from "./runner.js";
 import { checkRepoRef, isSafeGitRef } from "./workspace.js";
@@ -137,6 +137,10 @@ export async function dispatchRun(input: DispatchRunInput): Promise<DispatchRunR
 
 	// Throws ValidationError listing what is missing or mistyped.
 	const resolvedArgs = validateArgs(agentManifest, args);
+
+	// Throws ValidationError naming any {{placeholder}} the manifest leaves
+	// unfilled, before a Run row or a workspace exists.
+	await preflightPromptValues(agentManifest);
 
 	const execution = effectiveExecution(agentManifest, resolvedArgs);
 	if (execution !== "unattended") {

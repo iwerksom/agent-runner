@@ -3,11 +3,9 @@
  * operator action in the console rather than an edit to `.env.local` followed by
  * `pnpm seed`.
  *
- * `scripts/seed.ts` still seeds one repo from `TARGET_REPO_*`, because a fresh
- * database needs a row before there is a UI to add one from. Everything after
- * that first row goes through here. Both paths converge on the same upsert, so a
- * repo added in the console and a repo seeded from the environment are
- * indistinguishable afterwards.
+ * This is the only way a repo comes into existence. None is seeded from the
+ * environment: an empty database opens on an empty repos page with an Add
+ * repository button, and a new repo's agents are synced as it is saved.
  *
  * Two rules this module exists to enforce:
  *
@@ -29,6 +27,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { prisma } from "./db.js";
 import { NotFoundError, ValidationError } from "./errors.js";
+import { syncRegistry } from "./registry.js";
 import { discardRepoWorkspaces } from "./workspace.js";
 
 const execFileAsync = promisify(execFile);
@@ -274,6 +273,20 @@ export async function createRepo(input: RepoInput): Promise<{ slug: string }> {
 
 	const { slug, ...fields } = repoFieldsOf(input);
 	const created = await prisma.repo.create({ data: { slug, ...fields } });
+	// Attach the repo's agents now, so they are on the Agents page when the form
+	// closes rather than after a separate Sync registry press. A repo with no
+	// `registry/<slug>/` directory syncs to nothing, which is valid.
+	//
+	// A failed sync must not fail the create: the row is already written, so
+	// reporting an error would send the operator back to a form whose retry is
+	// refused as a duplicate slug. The repo exists either way; Sync registry on
+	// its row runs the same sync again.
+	await syncRegistry(created.slug).catch((syncFailure: unknown) => {
+		console.error(
+			`[arnold] repo ${created.slug} was created, but syncing its agents failed; press Sync registry to retry`,
+			syncFailure,
+		);
+	});
 	return { slug: created.slug };
 }
 
