@@ -296,10 +296,9 @@ export function RepoFormModal({
 					<div className="flex items-start gap-2 rounded-medium border border-default-200 px-3 py-2 text-[11px] text-default-500">
 						<Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
 						<span>
-							Adding a repo registers the target. Its agents appear once{" "}
-							<code className="font-mono">registry/{values.slug || "<slug>"}/</code>{" "}
-							exists and you press Sync registry, or immediately for any manifest
-							already declared against this slug.
+							Adding a repo registers the target and syncs its agents from{" "}
+							<code className="font-mono">registry/{values.slug || "<slug>"}/</code>.
+							If that directory does not exist yet, add it and press Sync registry.
 						</span>
 					</div>
 

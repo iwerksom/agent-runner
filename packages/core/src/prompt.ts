@@ -323,6 +323,22 @@ function fillManifestValues(body: string, manifest: Pick<AgentManifest, "id" | "
 	return filled;
 }
 
+/**
+ * Refuse a console prompt whose body has a `{{placeholder}}` the manifest's
+ * `values` do not fill, without a workspace.
+ *
+ * `renderPrompt` makes the same refusal, but only after the Runner has leased a
+ * worktree and moved the run to `running`. A console prompt is readable before
+ * any of that, so the Dispatcher calls this and the operator gets a 400 naming
+ * the missing value instead of a failed run. A repo-sourced prompt only exists
+ * inside the leased checkout, so it is left to `renderPrompt`.
+ */
+export async function preflightPromptValues(manifest: AgentManifest): Promise<void> {
+	if (manifest.prompt.kind !== "console") return;
+	const raw = await readPromptSource(manifest, "");
+	fillManifestValues(parsePromptFile(raw).promptFileBody, manifest);
+}
+
 function substituteSlot(body: string, spec: ArgSpec, value: string | undefined): string {
 	const shape = classifySlot(spec.slot);
 	switch (shape.slotKind) {
