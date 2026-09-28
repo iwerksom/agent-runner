@@ -427,3 +427,147 @@ mechanic — filing a new issue, rather than reading a backlog or moving a ticke
 and they are untouched and working. That mechanic is the one the findings
 pipeline needs, so it is deliberately left for the work that will actually
 exercise it.
+
+---
+
+The entries below come from the 2026-09-28 architecture review, which re-scoped
+Arnold as a vendor-agnostic team tool. `docs/architecture.md` Section 0 is the
+plan they belong to.
+
+## 21. Abstract over the harness, not the model
+
+Arnold must run an agent on more than one LLM vendor. There are two places to put
+that seam.
+
+**Rejected: at the model API.** A gateway plus Arnold's own agent loop. That
+means rebuilding tool calling, file editing, context management and subagents,
+which is the one thing every coding-agent harness already does well and keeps
+improving. Arnold would spend its life chasing them.
+
+**Chosen: at the harness.** Claude Code, Codex, Gemini CLI and OpenCode run
+behind one `Harness` interface — `start(spec, sandbox)` yielding normalised
+events, `cancel()`, and a `capabilities` record — and the manifest names which
+harnesses an agent may use. The transport is the Agent Client Protocol where it
+works headless, and each CLI's own JSON event stream where it does not. The raw
+vendor payload is stored beside every normalised event, so a normaliser bug
+loses nothing.
+
+**Consequence:** the Agent SDK stops being Arnold's execution layer and becomes
+one adapter. `runner.ts` and `sdkAdapter.ts` split along that line. `prompt.ts`
+becomes more important, not less: rendering a prompt is now Arnold's job for
+every vendor, so it must not be traded for Claude's native slash-command
+substitution, however convenient that would be for Claude alone.
+
+**Unverified:** whether ACP holds up in a headless worker. The harness spike
+(Section 0, step 1) exists to find out before anything else depends on it.
+
+## 22. The sandbox is the enforcement boundary; the tool gate is advice
+
+DECISIONS #2 made enforcement Arnold's core value, and #3 said write scope is
+enforced twice: `canUseTool` refuses the call and the executor does not mount the
+credential. Only the first half was ever built, and it has two problems.
+
+**It is Claude-only.** `canUseTool` is an Agent SDK callback. Under #21 an
+enforcement layer that exists for one vendor is not an enforcement layer.
+
+**It parses shell strings, which cannot be made complete.** Probed against the
+real gate on 2026-09-28:
+
+| Command                                 | Allow-list       | Scope       | Gate says | Should say             |
+| --------------------------------------- | ---------------- | ----------- | --------- | ---------------------- |
+| `git log --output=src/x.ts`             | `Bash(git log*)` | `read-only` | allow     | deny: it writes a file |
+| `git -C . push origin main`             | `Bash(git *)`    | `read-only` | allow     | deny: it pushes        |
+| `git push origin main` (control)        | `Bash(git *)`    | `read-only` | deny      | deny                   |
+| `ls \| awk 'BEGIN{system("git push")}'` | `Bash(ls *)`     | `read-only` | deny      | deny                   |
+| `ls \| sort -o src/x.ts`                | `Bash(ls *)`     | `read-only` | deny      | deny                   |
+
+`vcsMutationIn` anchors on `^git\s+push`, so any global option before the
+subcommand (`-C`, `-c`, `--git-dir`) walks past it; and a read command with a
+writing flag is invisible to a gate that looks for write commands. Both will be
+fixed, and the next one will be found after them. That is the nature of the
+approach, not a quality problem with this file.
+
+So a write scope now compiles into three layers, most trustworthy first:
+
+1. **Sandbox profile.** A container around the worktree. `read-only` mounts it
+   read-only, allows no network except the LLM gateway, and holds no
+   credentials. Higher tiers add a writable mount, then a forge token scoped to
+   the one repo. It parses nothing, so it holds whatever the agent tries.
+2. **Harness-native config.** The manifest translated into Claude permission
+   rules, Codex sandbox and approval modes, or Gemini tool excludes. Best effort:
+   its value is a clean denial in the transcript.
+3. **The permission callback** — ACP's where available, `canUseTool` for the
+   Claude adapter. `writeScope.ts` lives here, and keeps the rules a filesystem
+   cannot express: bookkeeping globs, label-only issue edits, `.claude/` and
+   `.env*` denials.
+
+**Consequence:** until layer 1 exists, the scope badges in the UI overstate what
+is enforced on a host where `gh` and SSH credentials are live. The two bypasses
+above should be closed in `writeScope.ts` regardless, with smoke cases, because
+layer 3 remains the one that explains a denial.
+
+## 23. The engine and the registry are separate repositories
+
+`registry/` is TypeScript imported by the app. Adding an agent is a code change
+and a restart, and a team's agents are committed into the engine's repository.
+
+That is wrong for a tool meant to move between employers. The engine is
+personal, MIT-licensed property; a team's agent definitions, prompts and
+per-repo bindings are the team's. So:
+
+- **The engine** is this repository.
+- **A registry** is a separate git repository, loaded at runtime and validated
+  with zod rather than by the TypeScript compiler. A deployment points at one or
+  more of them; sync reads them the same way it reads a target repo's `.claude/`
+  today.
+- The definition format assumes no vendor. A repo's `.claude/commands/` becomes
+  one importer, not the model.
+
+**Rejected: keep TypeScript manifests and publish the registry as a package.**
+Type-checked manifests were a real benefit, but they bind every registry to the
+engine's build, and they make "a team edits its agents" mean "a team rebuilds
+Arnold". zod gives the same refusal at load time, with the error in the console
+rather than in a build log.
+
+**Consequence:** the definition/binding split already visible in
+`registry/ledtraad/` becomes a file-layout rule. Definitions carry the prompt,
+argument shape, outcome shape, reason codes and the write-scope ceiling.
+Bindings carry the repo, values, budget and the granted scope, which may only
+narrow the ceiling, never widen it.
+
+## 24. Rent the plumbing: gateway, Postgres queue, OIDC, MCP
+
+The Phase 1 and 3 plan named Redis, BullMQ, Redis pub/sub and a team IdP. Each is
+replaced by something that already exists and removes a moving part.
+
+- **An LLM gateway (LiteLLM) for keys, caps and cost.** Each run gets a virtual
+  key with a `max_budget`. That gives caps that hold across vendors, one price
+  table instead of each harness's own cost reporting (Claude Code reports USD,
+  others report tokens), and provider keys that never enter the sandbox.
+  `ledger.ts` stops enforcing and starts reporting.
+- **A Postgres-backed queue** (pg-boss or graphile-worker, both with cron)
+  instead of Redis and BullMQ. Postgres is already required for the store; a
+  second datastore buys nothing a single-team tool needs.
+- **Postgres `LISTEN/NOTIFY` feeding SSE** instead of Redis pub/sub. `bus.ts` is
+  still the only file that changes.
+- **Auth.js against any OIDC provider**, off in solo mode. No assumption of a
+  particular team IdP.
+- **MCP servers for integrations**, not shell. The tracker bindings of #20 reach
+  Jira through `curl` and GitHub through filtered `gh` flags; an MCP server gives
+  per-operation grants (`add_labels` allowed, `update_issue` not) and deletes the
+  flag parsing. The same applies to `plan-week`'s calendar read, which is the
+  only reason that agent is `needs-local-session`.
+
+**Rejected: n8n or a similar workflow engine as the core.** It is good at "when
+X, call Y" and has no notion of a leased worktree, a write scope or a run as a
+durable record. It fits in front of Arnold as a trigger source, calling the same
+dispatch endpoint as the UI.
+
+## 25. Arnold exposes itself over MCP
+
+The web console is not the only client worth having. An MCP server over the
+dispatch and query layer — `list_agents`, `dispatch_run`, `get_run`,
+`list_findings`, `triage_finding` — lets any MCP-capable assistant, from any
+vendor, trigger a team agent and read its history. It goes through the
+Dispatcher like every other caller, so every refusal in `dispatchRun` (archived
+repo, budget, execution mode, role) applies unchanged.

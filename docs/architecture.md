@@ -5,6 +5,12 @@
 > This is the plan of record. It was written before the code, and the code has
 > since diverged in places: see `docs/HANDOVER.md` for what is actually built,
 > and `docs/DECISIONS.md` for the choices made while building it.
+>
+> **Section 0 revises this plan (2026-09-28).** Arnold stops being a console for
+> Claude agents and becomes a vendor-agnostic team tool that rents the agent
+> loop. Where a later section contradicts Section 0 — Redis, the Agent SDK as the
+> execution layer, `canUseTool` as the enforcement boundary, a registry compiled
+> into the app — Section 0 wins, and the contradiction is listed there.
 
 A console for running Claude-based agents: list the registered agents, see data
 from their runs (status, cost, tokens, logs, artifacts, tickets, PRs), and
@@ -23,6 +29,183 @@ The registry bundled with this repo (`registry/example-repo/`) is a reference
 set: seven real manifests, one per agent kind and one per write scope, written
 against a project that is no longer the point. Read them as worked examples and
 templates, then add a directory for your own repo.
+
+## 0. Revision, 2026-09-28: a vendor-agnostic team tool
+
+### Why the plan changed
+
+Three requirements the original plan did not carry:
+
+1. **Team and solo from one codebase.** Arnold must run for one person on a
+   laptop and for a team behind SSO, and move between employers with its owner.
+   The engine is personal property; each team's agents are not.
+2. **Team agents with history.** The problem Arnold exists for is that agents
+   today are per developer and remember nothing. A team needs repo agents that
+   are reviewed like code, runs that are durable records, and a UI that shows
+   what those agents have found and cost over time.
+3. **Vendor-agnostic.** An agent must be runnable on more than one LLM vendor,
+   and the choice must be a manifest field, not a rewrite.
+
+And one constraint that shapes all three: **Arnold does not rebuild plumbing
+that already exists.** A vendor abstraction is worth building only where it can
+be an extraction over something real, not a reimplementation of it.
+
+### The line: Arnold owns the record, and rents the loop
+
+There are two places to abstract over vendors, and only one of them avoids
+re-plumbing:
+
+- **At the model API** (a gateway plus Arnold's own agent loop). This means
+  rebuilding tool calling, file editing, context management and subagents —
+  exactly what every coding-agent harness already does well. Rejected.
+- **At the harness.** Run existing coding-agent CLIs — Claude Code, Codex,
+  Gemini CLI, OpenCode — behind one adapter. **Chosen.**
+
+The harness layer already has a standard: the **Agent Client Protocol (ACP)**, a
+JSON-RPC protocol between a client and a coding agent. Gemini CLI speaks it
+natively (`--acp`); Claude Code and Codex speak it through the
+`claude-agent-acp` and `codex-acp` adapters. It was built for editors; Arnold is
+one more client. Its permission-request flow is the vendor-neutral counterpart
+of the SDK's `canUseTool`. Whether it holds up headless in a worker is
+**unverified**, which is why the harness spike is the first step below. Where it
+does not, the fallback is each CLI's own JSON event stream behind the same
+adapter interface.
+
+So Arnold owns what gets run, where, by whom, and what came of it:
+
+1. **The team registry** — versioned agent definitions and per-repo bindings,
+   reviewed in git.
+2. **Run history and provenance** — who ran what, at which SHA, on which
+   harness and model, at what cost.
+3. **Outcomes and findings** — reason codes over time; findings fingerprinted,
+   deduplicated, closed when they stop appearing, and routed to the scoper and
+   the queue (ROADMAP Phase 7).
+4. **The inbox** — `awaiting_input` runs and approvals.
+5. **Harness comparison** — the same agent run on two vendors, compared on
+   outcome and cost per reason code. No single vendor will ever build this.
+
+Everything else is rented.
+
+### Target shape
+
+```
+                ┌──────────────── Arnold (owned) ───────────────┐
+ UI (Next.js) ─┤  Registry · Dispatcher · Run history ·         │
+ MCP server  ──┤  Provenance · Outcomes · Findings · Inbox ·    │
+ Webhooks    ──┤  RBAC · Ledger views                           │
+                └───────────────┬───────────────────────────────┘
+                                │ enqueue (Postgres queue)
+                         ┌──────▼──────┐
+                         │   Worker    │  leases worktree, builds sandbox
+                         └──────┬──────┘
+          ┌─────────────────────┼─────────────────────┐   rented below
+   Sandbox (container: worktree mount, egress policy, per-tier credentials)
+          │   Harness adapter (ACP, or the CLI's JSON stream)
+          │   claude-code │ codex │ gemini-cli │ opencode
+          └──────── model traffic ──► LLM gateway ──► providers
+```
+
+### Owned and rented, concern by concern
+
+| Concern                                      | Rented                                                                | Arnold's part                                  |
+| -------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------- |
+| Agent loop, tools, file edits, subagents     | Claude Code, Codex, Gemini CLI, OpenCode                              | A `Harness` adapter normalising their events   |
+| Client ↔ agent protocol                      | ACP                                                                   | One ACP client                                 |
+| Tool integrations (tracker, calendar, forge) | MCP servers                                                           | Which servers each agent is granted            |
+| Isolation and enforcement                    | Containers: read-only mounts, egress rules, no credentials by default | Compiling a write scope into a sandbox profile |
+| Model keys, budget caps, per-provider cost   | LLM gateway (LiteLLM): a virtual key per run with `max_budget`        | Ledger views; caps declared in manifests       |
+| Queue and schedules                          | A Postgres-backed queue (pg-boss or graphile-worker), cron included   | Nothing                                        |
+| Live log transport                           | Postgres `LISTEN/NOTIFY` feeding SSE                                  | Nothing                                        |
+| Auth                                         | Auth.js against any OIDC provider; solo mode is one local user        | Role checks                                    |
+| Agent instructions in the target repo        | `AGENTS.md`, `SKILL.md`, MCP — formats several vendors read           | The manifest and prompt format                 |
+| Triggers from other systems                  | n8n, forge webhooks                                                   | An HTTP and MCP endpoint they call             |
+
+The gateway earns its place three times over: caps that hold across vendors, a
+cost figure computed from one price table rather than each harness's own
+reporting (Claude Code reports USD, others report tokens), and provider keys
+that never enter the sandbox — the run holds a virtual key capped to its budget.
+
+### Enforcement, rebuilt so it survives a vendor change
+
+`canUseTool` exists only in Claude's SDK, and parsing shell strings cannot be
+made complete (DECISIONS #22 lists the bypasses found in `writeScope.ts`). So a
+write scope compiles into three layers, most trustworthy first:
+
+1. **Sandbox profile — the boundary.** What the container can reach decides what
+   the run can do. `read-only`: worktree mounted read-only, no network except the
+   gateway, no credentials. `artifacts`: one writable output directory.
+   `working-tree`: writable worktree, still no credentials. `branch-push` and up:
+   a forge token scoped to that one repo. This holds whatever the agent tries,
+   because it parses nothing.
+2. **Harness-native config — best effort.** The manifest is translated into
+   Claude permission rules, Codex sandbox and approval modes, or Gemini tool
+   excludes. Its value is a clean denial in the transcript, not safety.
+3. **ACP permission callback — the fine rules.** Bookkeeping globs, label-only
+   issue edits, `.claude/` and `.env*` denials. `writeScope.ts` moves here. It
+   no longer has to be complete, only useful.
+
+### Portability: the engine and the registry split
+
+`registry/` is TypeScript compiled into the app today, so adding an agent needs a
+code change and a restart, and a team's agents live in the engine's repository.
+Both are wrong for a tool that moves between employers.
+
+- **The engine** is this repository: MIT, owned by its author.
+- **A registry** is a separate git repository — agent definitions, prompts,
+  per-repo bindings — loaded by Arnold at runtime and validated with zod. A team
+  keeps its registry when its author leaves; a personal registry travels with
+  them. One Arnold deployment points at one or more registry repos.
+- **One deployment shape**: `docker compose up` brings up web, worker, Postgres
+  and the gateway. Solo mode is the same file with auth off. A team adds an OIDC
+  provider.
+- **Definitions stay vendor-neutral.** Nothing in the definition format assumes
+  `.claude/`. A repo's `.claude/commands/` can still be imported, but as one
+  importer among several, not as the model.
+
+### Effect on the current code
+
+| Module                       | Change                                                                                                                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agents.ts`                  | Add `harness: { default, allowed[] }` and a model per harness. `permissionMode` and Claude tool names become harness-specific config. `WriteScope` stays, as the input to the sandbox profile.                      |
+| `runner.ts`, `sdkAdapter.ts` | Split into a `Harness` interface — `start(spec, sandbox)` yielding normalised events, `cancel()`, `capabilities` — and a `claude-code` implementation. The raw vendor payload is kept beside each normalised event. |
+| `writeScope.ts`              | Demoted from boundary to layer 3. Close the known bypasses anyway (DECISIONS #22).                                                                                                                                  |
+| `ledger.ts`                  | Reads spend from the gateway; caps become virtual-key budgets.                                                                                                                                                      |
+| `workspace.ts`               | Kept. Gains building the container around the worktree.                                                                                                                                                             |
+| `prompt.ts`                  | Kept, and now load-bearing: it is the vendor-neutral renderer, not a copy of Claude's slash-command substitution.                                                                                                   |
+| `bus.ts`                     | Postgres `LISTEN/NOTIFY`. Redis is not introduced at all.                                                                                                                                                           |
+| `registry/`                  | Moves out to a registry repository loaded at runtime.                                                                                                                                                               |
+
+### Order of work, cheapest test first
+
+1. **Harness spike.** Run `doc-drift` against ledtraad through Claude Code and
+   Codex, headless, via ACP or the CLI JSON stream, and normalise both event
+   streams. If ACP does not hold up headless, this finds out in a day.
+2. **Gateway.** LiteLLM in front of both harnesses; cost and caps move there.
+3. **Sandbox.** One container profile per write scope, no credentials at
+   `read-only`; `writeScope.ts` relaxes to layer-3 duty.
+4. **Postgres and the queue.** A separate worker process replaces the in-process
+   runner; SQLite goes.
+5. **Registry repository split.**
+6. **Findings** (ROADMAP Phase 7) — the feature that justifies the rest.
+7. **Auth**, once someone other than the author uses it.
+
+Steps 1 to 3 settle whether vendor-agnosticism is real before anything is spent
+on team features.
+
+### What this supersedes further down
+
+- Section 2: "TypeScript Agent SDK" as the execution choice becomes "harness
+  adapters, the Agent SDK being one"; "Redis (BullMQ + pub/sub)" becomes a
+  Postgres queue and `LISTEN/NOTIFY`; "Auth.js against the team IdP" becomes
+  any OIDC provider, optional in solo mode; "Prompts stay in the target repo"
+  becomes "prompts live in a registry repository or the target repo".
+- Section 3: the worker is still the trust boundary, but `ANTHROPIC_API_KEY`
+  lives in the gateway, not the worker, and the sandbox — not the worker process
+  — is what an agent runs inside.
+- Section 4: the Redis, BullMQ and pub/sub rows are void.
+- Section 13: the SDK query loop becomes the `claude-code` harness; permission
+  enforcement follows the three layers above.
+- Section 16: write scope gates credentials through the sandbox profile.
 
 ## 1. Goals and non-goals
 
