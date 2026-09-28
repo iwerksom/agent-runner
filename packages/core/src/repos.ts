@@ -276,7 +276,17 @@ export async function createRepo(input: RepoInput): Promise<{ slug: string }> {
 	// Attach the repo's agents now, so they are on the Agents page when the form
 	// closes rather than after a separate Sync registry press. A repo with no
 	// `registry/<slug>/` directory syncs to nothing, which is valid.
-	await syncRegistry(created.slug);
+	//
+	// A failed sync must not fail the create: the row is already written, so
+	// reporting an error would send the operator back to a form whose retry is
+	// refused as a duplicate slug. The repo exists either way; Sync registry on
+	// its row runs the same sync again.
+	await syncRegistry(created.slug).catch((syncFailure: unknown) => {
+		console.error(
+			`[arnold] repo ${created.slug} was created, but syncing its agents failed; press Sync registry to retry`,
+			syncFailure,
+		);
+	});
 	return { slug: created.slug };
 }
 
