@@ -23,6 +23,7 @@ import {
 import { atLeast } from "../packages/core/src/agents.js";
 import { extractRunTicketKeys, extractTicketKeys } from "../packages/core/src/notary.js";
 import { preflightPromptValues, renderPrompt, validateArgs } from "../packages/core/src/prompt.js";
+import { gateAsPreToolUseHook } from "../packages/core/src/sdkAdapter.js";
 import { buildCanUseTool } from "../packages/core/src/writeScope.js";
 import { registryManifestsBySlug } from "../registry/index.js";
 import { manifest as aiSmellScan } from "../registry/example-repo/ai-smell-scan.js";
@@ -628,6 +629,52 @@ console.log("\n[15] pipeline filters: a free pipeline stage cannot execute or wr
 	]) {
 		check(`denied: ${command}`, (await verdict(command)) === "deny");
 	}
+}
+
+console.log("\n[16] the gate also runs as a PreToolUse hook, ahead of CLI auto-approval");
+{
+	// The CLI approves commands it judges read-only without asking canUseTool, so
+	// on 2026-10-01 a read-only agent ran `pwd` and `echo` its allow-list denies
+	// (#14). The hook is what reaches those calls; it must deny what the gate
+	// denies, and stay silent on what the gate allows so it can never widen.
+	const hook = gateAsPreToolUseHook(
+		buildCanUseTool({
+			manifest: scoper,
+			workspacePath: checkout,
+			declaredTools: ["Read", "Grep", "Glob", "Bash"],
+		}),
+	);
+	const run = (command: string) =>
+		hook(
+			{
+				hook_event_name: "PreToolUse",
+				tool_name: "Bash",
+				tool_input: { command },
+				tool_use_id: "smoke",
+				session_id: "smoke",
+				transcript_path: "",
+				cwd: checkout,
+			} as Parameters<typeof hook>[0],
+			"smoke",
+			{ signal: new AbortController().signal },
+		);
+	for (const command of ["pwd", "echo hi", `cat ${checkout}/README.md`]) {
+		const output = (await run(command)) as {
+			hookSpecificOutput?: { permissionDecision?: string; permissionDecisionReason?: string };
+		};
+		check(
+			`hook denies what the gate denies: ${command}`,
+			output.hookSpecificOutput?.permissionDecision === "deny" &&
+				(output.hookSpecificOutput.permissionDecisionReason ?? "").length > 0,
+			JSON.stringify(output),
+		);
+	}
+	const allowed = await run("git log --oneline -5");
+	check(
+		"hook says nothing about an allowed call",
+		JSON.stringify(allowed) === "{}",
+		JSON.stringify(allowed),
+	);
 }
 
 console.log(
