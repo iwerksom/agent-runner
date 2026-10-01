@@ -113,7 +113,7 @@ try {
 		`<!-- ${ORDER_MARKER} run=${run.id} base=${run.baseSha ?? "unknown"} -->`,
 		`**Arnold work order** from run \`${run.id}\`, scoped against \`${(run.baseSha ?? "unknown").slice(0, 12)}\` on \`${run.baseRef ?? run.repo.defaultBranch}\` ($${(run.costUsd ?? 0).toFixed(2)}, ${run.numTurns ?? "?"} turns).`,
 		"",
-		`To approve, replace \`${LABELS.proposed.name}\` with \`${LABELS.approved.name}\`. Then ask Claude Code in this repo to run approved work orders. It executes only orders the repo owner approved after this comment was posted, and stops if any file in scope changed since \`${(run.baseSha ?? "").slice(0, 12)}\`.`,
+		`To approve, replace \`${LABELS.proposed.name}\` with \`${LABELS.approved.name}\`. Then ask Claude Code in this repo to run approved work orders. It executes only orders the repo owner approved after this comment was posted, and stops if any file in scope changed since \`${(run.baseSha ?? "").slice(0, 12)}\` or if the problem the order fixes no longer occurs.`,
 		"",
 		"---",
 		"",

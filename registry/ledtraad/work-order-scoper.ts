@@ -42,6 +42,7 @@ export const manifest: AgentManifest = {
 		"- Hot files (touched by open PRs or unmerged branches, treat as off limits):",
 		"{{hotFiles}}",
 		"- Verification commands: use the ones ledtraad's `CLAUDE.md` and `RUNBOOK.md` name for this kind of change (it is a Python repo). The runtime corpus under `data/` and the `.venv` are not in this checkout, so say which checks need them rather than claiming you ran them.",
+		"- Behavioural premises: if the issue claims a behaviour (a failing test case, a regression, a count) that needs the corpus or a running server to measure, you cannot check it here. Do not accept or reject on it. Make re-measuring it the FIRST `## Escalation` condition, with the exact command and the result that means the problem is gone, so the executor checks it on the default branch before changing code. ledtraad #41 was scoped and executed against a regression its fusion fixes had already removed.",
 		"",
 		"### Full issue text",
 		"",

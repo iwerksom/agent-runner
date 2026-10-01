@@ -687,6 +687,10 @@ console.log("\n[17] ledtraad's work-order-scoper: GitHub issues as tickets, read
 	check("ticket key lands in the context block", body.includes("Ticket key: #46"));
 	check("branch spelling is given as issue-<n>", body.includes("issue-31-<kebab-slug>"));
 	check(
+		"an unmeasurable behavioural premise goes first in Escalation",
+		body.includes("Make re-measuring it the FIRST `## Escalation` condition"),
+	);
+	check(
 		"an empty issueText tells the scoper to read the issue with gh",
 		body.includes("gh issue view <number> --repo iwerksom/ledtraad --json"),
 	);
