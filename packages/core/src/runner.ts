@@ -103,6 +103,14 @@ export async function runAgent(runId: string): Promise<void> {
 	inflightRuns.set(runId, inflight);
 	let wallClockExpired = false;
 	let wallClockTimer: NodeJS.Timeout | undefined;
+	// Outside the try on purpose. An error result (maxTurns, for one) reaches the
+	// loop as a message carrying the run's usage and then ends the iterator with a
+	// throw, so the catch below is where a failed run's spend must be recorded.
+	// Before this, a run that hit maxTurns cost $1.00 and the ledger saw $0.
+	let usageCostUsd = 0;
+	let usageTokens = 0;
+	let usageTurns = 0;
+	let usageRecorded = false;
 
 	try {
 		if (typeof manifest.id !== "string") {
@@ -243,9 +251,6 @@ export async function runAgent(runId: string): Promise<void> {
 
 		let assistantText = "";
 		let finalMessageText = "";
-		let usageCostUsd = 0;
-		let usageTokens = 0;
-		let usageTurns = 0;
 		let resultWasError = false;
 
 		for await (const message of query({ prompt: promptBody, options })) {
@@ -299,6 +304,7 @@ export async function runAgent(runId: string): Promise<void> {
 			cost: usageCostUsd,
 			tokens: usageTokens,
 		});
+		usageRecorded = true;
 
 		await appendRunEvent(runId, ++seq, "log", {
 			message: `collected ${artifactRows.length} artifact(s), recorded ${outcomeRows.length} outcome(s)`,
@@ -351,14 +357,31 @@ export async function runAgent(runId: string): Promise<void> {
 				: undefined;
 		const status =
 			abortedStatus !== undefined && isAbortError(caught) ? abortedStatus : "failed";
-		await setRunStatus(runId, status, { endedAt: new Date(), exitReason: reason }).catch(
-			(statusFailure: unknown) => {
-				console.error(
-					`[arnold] could not write terminal status for ${runId}`,
-					statusFailure,
-				);
-			},
-		);
+		const spent = usageCostUsd > 0 || usageTokens > 0;
+		if (spent && !usageRecorded) {
+			usageRecorded = true;
+			// Spend only starts after the repo check, but the type cannot know that.
+			const scopes = ["global", `agent:${run.agentId}`];
+			if (run.repo !== null) scopes.push(`repo:${run.repo.slug}`);
+			await recordUsage(scopes, { cost: usageCostUsd, tokens: usageTokens }).catch(
+				(ledgerFailure: unknown) => {
+					console.error(
+						`[arnold] could not record usage for failed run ${runId}`,
+						ledgerFailure,
+					);
+				},
+			);
+		}
+		const usageColumns = spent
+			? { costUsd: usageCostUsd, tokens: usageTokens, numTurns: usageTurns }
+			: {};
+		await setRunStatus(runId, status, {
+			endedAt: new Date(),
+			exitReason: reason,
+			...usageColumns,
+		}).catch((statusFailure: unknown) => {
+			console.error(`[arnold] could not write terminal status for ${runId}`, statusFailure);
+		});
 	} finally {
 		if (wallClockTimer !== undefined) clearTimeout(wallClockTimer);
 		inflightRuns.delete(runId);
