@@ -3,9 +3,12 @@
 State of the project as of the last working session. Written for whoever picks
 this up next, including a future you with no memory of building it.
 
-If you read only one thing: **Phase 0 completed five real agent runs in August
-2026, and nothing has run since the genericization.** Everything below is either
-verified, or honestly marked as not.
+If you read only one thing: **the current tree runs.** On 2026-10-01 a read-only
+agent completed five runs against a throwaway sandbox repo on the code as merged,
+and with `ARNOLD_TRACE_PLUGIN_DIR` set each run also lands as an MLflow trace.
+Only the read-only and `artifacts` tiers have run; everything above them is held
+in code until Phase 3. Everything below is either verified, or honestly marked
+as not.
 
 > **Correction, 2026-09-09.** Earlier versions of this file said Arnold "has
 > never completed a real agent run" and that "the database has zero `Run` rows".
@@ -105,32 +108,64 @@ persistence, outcome parsing, provenance recording and the ledger all did work a
 least once, and artifact collection produced a real 8.6 KB report that is still
 in the artifact store.
 
-**What is unproven is the current tree, which is not the tree that ran.** The
-Aug 29–30 genericization changed how console-owned prompts resolve and replaced
-every per-repo value in the eight prompts with `{{placeholders}}` that nothing
-fills. Nothing has run since. Treat the list above as evidence the design works,
-not as evidence this checkout works.
+The Aug 29–30 genericization then replaced every per-repo value in the eight
+prompts with `{{placeholders}}`. A per-manifest `values` map now fills them, and
+a body placeholder left unfilled throws at render time rather than reaching the
+model.
 
 All five rows have `repoId = null`: the repo they ran against was deleted, and
 because `Run.repoId` is nullable that silently detached them rather than failing.
 They are the worked example for DECISIONS #16, and the reason a repo with runs
 can now only be archived.
 
-Getting one run to succeed on the current tree is still the single most valuable
-thing to do next. Start with the placeholders — see the smoke failure below.
+### Executed on the current tree
+
+| Date       | Repo       | Agent               | Runs | Cost       | Notes                                                    |
+| ---------- | ---------- | ------------------- | ---- | ---------- | -------------------------------------------------------- |
+| 2026-09-12 | `ledtraad` | `docid-invariant`   | 1    | $0.93      | First run after the placeholder fix                      |
+| 2026-09-12 | `ledtraad` | `doc-drift`         | 2    | $1.78/1.59 | 39 and 34 turns; sized the agent's budget                |
+| 2026-10-01 | `sandbox`  | `sandbox-doc-drift` | 5    | $0.10–0.32 | After the tracker-binding merge; found all planted drift |
+
+`sandbox` is a throwaway local repo (`registry/sandbox/`) whose README carries
+three deliberate drifts, so a run is either right or wrong. It is the cheapest
+way to prove a change end to end without pointing Arnold at a real project. Add
+it from `/repos` with the local path of any small git repo of the same shape.
+
+### Tracing runs in MLflow
+
+Opt-in, and off unless `ARNOLD_TRACE_PLUGIN_DIR` is set.
+
+1. `pip install "mlflow>=3.4"` in a virtualenv, then `mlflow server --port 5000`.
+2. In the target repo: `mlflow autolog claude -u http://localhost:5000 -n <name> -y`.
+   It writes an `env` block to `.claude/settings.json` and installs the
+   `mlflow-tracing` plugin. **Commit `settings.json`**: a run sees the leased
+   worktree, not your checkout.
+3. Start the console with `ARNOLD_TRACE_PLUGIN_DIR` pointing at
+   `~/.claude/plugins/cache/mlflow-plugins/mlflow-tracing/<version>`.
+
+Step 3 is needed because the plugin is installed with `--scope local`, which
+binds it to the checkout's own path; a worktree never has that path, so without
+it the SDK init event shows `plugins: []` and nothing is traced.
+
+Each run yields an AGENT span, one TOOL span per tool call and an LLM span. The
+plugin attaches usage to the last LLM call only, so MLflow's cost and token
+figures undercount by roughly 3×. **The ledger is the source of truth for cost.**
 
 ### Known broken or unfinished
 
-| Thing                                                    | Detail                                                                                                                                                                                                       |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| No auth                                                  | Phase 3. Anyone reaching the port can trigger any agent — and now also register a repo, which names a host path Arnold will clone. Keep it on localhost.                                                     |
-| Mutating agents registered without gating                | All seven reference manifests are registered, including `draft-pr` and `external-writes` tiers. The manifests exist; the role checks they assume do not.                                                     |
-| `awaiting_input` is terminal                             | An agent that stops to ask parks with the question preserved and no way to answer. Phase 4.                                                                                                                  |
-| No guarded-push helper                                   | Two manifests declare `mainBookkeeping`; the helper that validates the staged diff against declared globs is not written.                                                                                    |
-| `pre-pr-review` has no structured outcome                | It prints a summary and writes no file, so its runs show a transcript and a cost but nothing chartable.                                                                                                      |
-| 50 unfilled `{{placeholders}}` in the prompts            | `pnpm smoke <checkout>` fails `no unfilled {{placeholders}} remain`. `renderPrompt` fills `contextTemplate` only; a prompt **body** keeps its `{{defaultBranch}}` verbatim. Blocks a first run on this tree. |
-| Five runs detached from their repo                       | `repoId` is null on every historical run because the old repo row was deleted. Not recoverable; DECISIONS #16 stops it recurring.                                                                            |
-| The reference registry points at a repo you may not have | `registry/example-repo/` describes agents from one specific project. Keep them as worked examples; add your own directory.                                                                                   |
+| Thing                                                    | Detail                                                                                                                                                                                                                       |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No auth                                                  | Phase 3. Anyone reaching the port can trigger any agent — and now also register a repo, which names a host path Arnold will clone. Keep it on localhost.                                                                     |
+| Mutating agents held, not gated                          | Every manifest above `artifacts` carries `disabled` with a reason and cannot be triggered (smoke [13]). The role checks and per-tier credentials that would release them are Phase 3.                                        |
+| `awaiting_input` is terminal                             | An agent that stops to ask parks with the question preserved and no way to answer. Phase 4.                                                                                                                                  |
+| No guarded-push helper                                   | Two manifests declare `mainBookkeeping`; the helper that validates the staged diff against declared globs is not written.                                                                                                    |
+| `pre-pr-review` has no structured outcome                | It prints a summary and writes no file, so its runs show a transcript and a cost but nothing chartable.                                                                                                                      |
+| CLI auto-approval precedes `canUseTool`                  | The Claude Code CLI approves commands it judges read-only before the callback runs. On 2026-10-01 a read-only agent ran `pwd`, `echo` and `cat`, all of which `canUseTool` denies. The allow-list is not yet the whole gate. |
+| User-level skills load into runs                         | `settingSources: ["project"]` does not keep `~/.claude` skills out: they appear in the SDK init event's slash commands.                                                                                                      |
+| `Agent.id` is global                                     | One prompt bound to two repos needs two ids (`doc-drift`, `sandbox-doc-drift`); a shared id would overwrite the other repo's row on sync.                                                                                    |
+| Smoke [6] needs the example-repo fixture                 | Its two checks expect `.pr-loop/reports/*.md` in the checkout; against any other repo they fail while the code path is fine.                                                                                                 |
+| Five runs detached from their repo                       | `repoId` is null on every historical run because the old repo row was deleted. Not recoverable; DECISIONS #16 stops it recurring.                                                                                            |
+| The reference registry points at a repo you may not have | `registry/example-repo/` describes agents from one specific project. Keep them as worked examples; add your own directory.                                                                                                   |
 
 ---
 
