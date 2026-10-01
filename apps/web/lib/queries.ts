@@ -20,6 +20,7 @@ import {
 	type RunSummary,
 } from "@/lib/dto";
 import type { RunsQuery } from "@/lib/params";
+import type { FindingDto } from "@/components/types";
 
 /** The rolling window the agent cards report cost and run counts over. */
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -172,4 +173,43 @@ export async function loadRunDetail(runId: string): Promise<RunDetail | undefine
 		children: runRow.children.map((childRow) => mapRunSummary(childRow)),
 		workspacePath: workspaceRow?.path ?? undefined,
 	});
+}
+
+/** "filing" is a moment, not a place to browse: it is listed with the filed ones. */
+export async function loadFindings(
+	options: { repoSlug?: string; state?: string } = {},
+): Promise<FindingDto[]> {
+	const states =
+		options.state === undefined
+			? undefined
+			: options.state === "filed"
+				? ["filing", "filed"]
+				: [options.state];
+	const rows = await prisma.finding.findMany({
+		where: {
+			...(options.repoSlug === undefined ? {} : { repo: { slug: options.repoSlug } }),
+			...(states === undefined ? {} : { state: { in: states } }),
+		},
+		include: { repo: { select: { slug: true } } },
+		orderBy: [{ lastSeenAt: "desc" }, { file: "asc" }, { line: "asc" }],
+	});
+	return rows.map((row) => ({
+		id: row.id,
+		repoSlug: row.repo.slug,
+		agentId: row.agentId,
+		title: row.title,
+		file: row.file,
+		line: row.line,
+		claim: row.claim,
+		measured: row.measured,
+		command: row.command,
+		verdict: row.verdict,
+		note: row.note,
+		state: row.state as FindingDto["state"],
+		issueNumber: row.issueNumber,
+		issueUrl: row.issueUrl,
+		sourceRunId: row.sourceRunId,
+		firstSeenAt: row.firstSeenAt.toISOString(),
+		lastSeenAt: row.lastSeenAt.toISOString(),
+	}));
 }

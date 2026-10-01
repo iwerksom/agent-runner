@@ -218,8 +218,13 @@ model Finding {
   verdict  String
   note     String @default("")
 
-  /// open | closed. "filed" arrives with the tracker work (#34).
+  /// open | filing | filed | closed. "filing" is the moment between the click and
+  /// the tracker answering, so a double click cannot file the issue twice.
   state       String    @default("open")
+  /// The tracker issue this finding was filed as, so no later run offers it again.
+  issueNumber Int?
+  issueUrl    String?
+  filedAt     DateTime?
   firstSeenAt DateTime  @default(now())
   lastSeenAt  DateTime  @default(now())
   closedAt    DateTime?

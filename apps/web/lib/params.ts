@@ -41,6 +41,11 @@ export const runsQuerySchema = z.object({
 });
 export type RunsQuery = z.infer<typeof runsQuerySchema>;
 
+export const findingsQuerySchema = z.object({
+	repoSlug: z.string().min(1).optional(),
+	state: z.enum(["open", "filed", "closed"]).optional(),
+});
+
 export const agentsQuerySchema = z.object({
 	repo: z.string().min(1).optional(),
 });

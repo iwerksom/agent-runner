@@ -44,7 +44,11 @@ export function fingerprintFor(agentId: string, file: string, claim: string): st
 }
 
 function str(value: unknown): string {
-	return typeof value === "string" ? value : value === undefined || value === null ? "" : String(value);
+	return typeof value === "string"
+		? value
+		: value === undefined || value === null
+			? ""
+			: String(value);
 }
 
 /**
@@ -98,7 +102,10 @@ export function parseRechecks(payload: unknown): Recheck[] {
 		const e = entry as Record<string, unknown>;
 		const status = str(e.status);
 		const id = str(e.id).trim();
-		if (id === "" || (status !== "still-true" && status !== "fixed" && status !== "unmeasurable")) {
+		if (
+			id === "" ||
+			(status !== "still-true" && status !== "fixed" && status !== "unmeasurable")
+		) {
 			continue;
 		}
 		out.push({ id, status, measured: str(e.measured) });
@@ -113,7 +120,7 @@ export function parseRechecks(payload: unknown): Recheck[] {
  */
 export async function knownFindingsContext(repoId: string, agentId: string): Promise<string> {
 	const open = await prisma.finding.findMany({
-		where: { repoId, agentId, state: "open" },
+		where: { repoId, agentId, state: { in: ["open", "filing", "filed"] } },
 		orderBy: [{ file: "asc" }, { line: "asc" }],
 	});
 	if (open.length === 0) return "";
@@ -131,7 +138,7 @@ export async function knownFindingsContext(repoId: string, agentId: string): Pro
 		"",
 		"## Known findings to re-check",
 		"",
-		"These findings were reported by earlier runs and are still open. Re-run each",
+		"These findings were reported by earlier runs and are still open or filed. Re-run each",
 		"one's `command` and report it under `recheck` in your final JSON, by `id`:",
 		"`still-true` when the document still says what the claim quotes and the repo",
 		"still disagrees, `fixed` when the document now matches the repo (or the claim",
@@ -179,8 +186,6 @@ export async function recordFindings(
 				command: f.command,
 				verdict: f.verdict,
 				note: f.note,
-				state: "open",
-				closedAt: null,
 			};
 			if (existing === null) {
 				await prisma.finding.create({
@@ -193,12 +198,25 @@ export async function recordFindings(
 						file: f.file,
 						claim: f.claim,
 						firstSeenAt: now,
+						state: "open",
 						...fresh,
 					},
 				});
 				result.created += 1;
 			} else {
-				await prisma.finding.update({ where: { id: existing.id }, data: fresh });
+				// Reported again after being closed: it is back. If it was filed, the
+				// issue is still the place it lives, so it returns to "filed", not "open".
+				const reopened =
+					existing.state === "closed"
+						? {
+								state: existing.issueNumber === null ? "open" : "filed",
+								closedAt: null,
+							}
+						: {};
+				await prisma.finding.update({
+					where: { id: existing.id },
+					data: { ...fresh, ...reopened },
+				});
 				result.refreshed += 1;
 			}
 		}
@@ -210,11 +228,16 @@ export async function recordFindings(
 			if (check.status === "unmeasurable") continue;
 			const row = await prisma.finding.findUnique({ where: { id: check.id } });
 			if (row === null || row.repoId !== repoId || row.agentId !== agentId) continue;
-			if (row.state !== "open") continue;
+			if (row.state === "closed") continue;
 			if (check.status === "fixed") {
 				await prisma.finding.update({
 					where: { id: row.id },
-					data: { state: "closed", closedAt: now, lastRunId: runId, measured: check.measured },
+					data: {
+						state: "closed",
+						closedAt: now,
+						lastRunId: runId,
+						measured: check.measured,
+					},
 				});
 				result.closed += 1;
 			} else {

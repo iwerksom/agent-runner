@@ -174,7 +174,11 @@ Add one line to the prose too: "Re-checked: N still true, N fixed, N unmeasurabl
 		}
 	],
 	"recheck": [
-		{ "id": "the id from the Known findings section", "status": "still-true | fixed | unmeasurable", "measured": "what the command printed now" }
+		{
+			"id": "the id from the Known findings section",
+			"status": "still-true | fixed | unmeasurable",
+			"measured": "what the command printed now"
+		}
 	]
 }
 ```
