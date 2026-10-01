@@ -139,18 +139,40 @@ checkout. No speculation about what the value might be.
 
 ### Last, a fenced json block
 
-It must be the last fenced block in your final message, and it must parse:
+It must be the last fenced block in your final message, and it must parse. It
+repeats every finding from the prose above as a structured entry, so a consumer
+never has to read the prose. The prose stays for people; the JSON is the record.
 
 ```json
 {
 	"outcome": "clean | drift-found | unmeasurable",
 	"reasonCode": "stale-counts | missing-path | broken-crossref | stale-command | stale-status | mixed | none",
 	"checked": 0,
-	"findings": 0,
 	"unverifiable": 0,
-	"documents": ["README.md"]
+	"documents": ["README.md"],
+	"findings": [
+		{
+			"file": "README.md",
+			"line": 12,
+			"claim": "the quoted claim, verbatim",
+			"measured": "the value you measured, as a string; \"missing\" for an absent path",
+			"command": "the exact command you ran",
+			"verdict": "document-stale | repo-changed | unclear",
+			"note": "one sentence, or an empty string"
+		}
+	]
 }
 ```
+
+Rules for the array:
+
+- One entry per finding block above, in the same order, same wording. No finding
+  appears in only one of the two.
+- `file` is the document the claim is written in, and `line` is an integer.
+  `measured` is always a string, even for a number.
+- `findings` is `[]` when there are none, never absent and never a count. The
+  number of findings is the array's length; do not add a separate count.
+- Keep `note` as an empty string rather than omitting it.
 
 `outcome` is `clean` only when you measured claims and all of them held.
 If nothing could be measured at all, that is `unmeasurable`, not `clean` —
