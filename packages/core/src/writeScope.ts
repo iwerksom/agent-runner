@@ -215,6 +215,11 @@ function writeTargetOf(input: Record<string, unknown>): string | undefined {
  * allow-list entry of their own. Nothing that can execute another program is in
  * here, which is the whole point: `git log | sh` must not become reachable
  * because the manifest allowed `Bash(git log*)`.
+ *
+ * `awk` and `sed` are absent for that reason, not by oversight: awk has
+ * `system()` and `print > file`, and GNU sed has `e`, `s///e` and `w`, so either
+ * one turns any allowed command into arbitrary execution. A manifest that needs
+ * one names it in its allow-list, where the grant is visible.
  */
 const SAFE_PIPELINE_FILTERS = [
 	"head",
@@ -230,7 +235,6 @@ const SAFE_PIPELINE_FILTERS = [
 	"fgrep",
 	"rg",
 	"jq",
-	"awk",
 	"cat",
 	"echo",
 	"true",
@@ -242,12 +246,27 @@ const SAFE_PIPELINE_FILTERS = [
 ] as const;
 
 function isSafePipelineFilter(segment: string): boolean {
-	const program = segment.replace(/^\s+/, "").split(/\s+/)[0] ?? "";
-	if (program === "sed") {
-		// `sed -i` edits in place, which is a write, not a filter.
-		return !/\s-[a-zA-Z]*i\b/.test(segment);
+	const words = segment.trim().split(/\s+/);
+	const program = words[0] ?? "";
+	if (!(SAFE_PIPELINE_FILTERS as readonly string[]).includes(program)) return false;
+	// Three filters have one option each that stops them being a filter. Matched
+	// loosely on purpose: a false refusal costs a retry, a false pass costs a write.
+	if (program === "sort") {
+		// `-o FILE` writes; `--compress-program=sh` executes. `o` appears in no
+		// other short sort option, so any bundle containing it is the output flag.
+		return !/\s(-[a-zA-Z]*o|--output|--compress-program)/.test(segment);
 	}
-	return (SAFE_PIPELINE_FILTERS as readonly string[]).includes(program);
+	if (program === "rg") {
+		// `--pre CMD` runs CMD on every file searched.
+		return !/\s--pre\b/.test(segment);
+	}
+	if (program === "uniq") {
+		// `uniq IN OUT` writes OUT. A filter takes at most the one input operand,
+		// and a bare `-` is that operand (stdin), not an option.
+		const operands = words.slice(1).filter((word) => word === "-" || !word.startsWith("-"));
+		return operands.length < 2;
+	}
+	return true;
 }
 
 type BashAnalysis = {

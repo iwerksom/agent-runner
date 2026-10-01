@@ -600,6 +600,36 @@ console.log("\n[14] every registered console prompt renders with no {{placeholde
 	);
 }
 
+console.log("\n[15] pipeline filters: a free pipeline stage cannot execute or write");
+{
+	// A safe filter needs no allow-list entry, so anything in that list that can
+	// run a program or write a file is a hole in every manifest at once.
+	const canUse = buildCanUseTool({
+		manifest: scoper,
+		workspacePath: checkout,
+		declaredTools: ["Read", "Grep", "Glob", "Bash"],
+	});
+	const verdict = async (command: string) => (await canUse("Bash", { command })).behavior;
+	for (const command of [
+		"git log --oneline -5 | head -3",
+		"git log --oneline -5 | sort -r | uniq -c",
+		"git log --oneline -5 | rg fix",
+	]) {
+		check(`still allowed: ${command}`, (await verdict(command)) === "allow");
+	}
+	for (const command of [
+		`git log --oneline -5 | awk '{system("touch pwned")}'`,
+		"git log --oneline -5 | sed 's/.*/touch pwned/e'",
+		"git log --oneline -5 | sed -n 'w pwned'",
+		"git log --oneline -5 | sort -o pwned",
+		"git log --oneline -5 | sort --compress-program=sh",
+		"git log --oneline -5 | uniq - pwned",
+		"git log --oneline -5 | rg --pre ./pwn x",
+	]) {
+		check(`denied: ${command}`, (await verdict(command)) === "deny");
+	}
+}
+
 console.log(
 	failures === 0 ? "\nAll smoke checks passed.\n" : `\n${failures} smoke check(s) failed.\n`,
 );
