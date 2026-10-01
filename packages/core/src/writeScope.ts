@@ -13,6 +13,7 @@
  * it lands in the transcript as evidence.
  */
 
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import {
 	atLeast,
@@ -67,6 +68,40 @@ export type BuildCanUseToolInput = {
 	defaultBranch?: string;
 	readBookkeepingPaths?: BookkeepingPathReader;
 };
+
+/** Tools that read files by path. Confined to the worktree by `denyReadTarget`. */
+const READ_TOOLS = ["Read", "Grep", "Glob"] as const;
+
+function isReadTool(toolName: string): boolean {
+	return (READ_TOOLS as readonly string[]).includes(toolName);
+}
+
+/**
+ * Secrets that live in a working tree by convention. Examples and templates are
+ * documentation, not secrets, and agents are expected to read them.
+ */
+const ENV_FILE = /^\.env(\..+)?$/;
+const ENV_TEMPLATE = /^\.env\.(example|sample|template)$/;
+
+function isEnvSecretName(name: string): boolean {
+	return ENV_FILE.test(name) && !ENV_TEMPLATE.test(name);
+}
+
+/** The deepest part of the path that exists, resolved through symlinks. */
+function realpathOfExistingPart(absolutePath: string): string {
+	let probe = absolutePath;
+	const rest: string[] = [];
+	for (;;) {
+		try {
+			return path.join(realpathSync(probe), ...rest.reverse());
+		} catch {
+			const parent = path.dirname(probe);
+			if (parent === probe) return absolutePath;
+			rest.push(path.basename(probe));
+			probe = parent;
+		}
+	}
+}
 
 function isWriteTool(toolName: string): boolean {
 	return (WRITE_TOOLS as readonly string[]).includes(toolName);
@@ -746,6 +781,78 @@ export function buildCanUseTool(input: BuildCanUseToolInput): CanUseToolFn {
 		return undefined;
 	};
 
+	/**
+	 * Reads by path stay inside the worktree. The write gate never looked at reads,
+	 * so Read and Grep with an absolute path could open `.env.local` or `~/.ssh`.
+	 * Symlinks are resolved first, so a link inside the worktree that points out
+	 * is outside. A glob that is itself absolute, starts at `~`, or climbs with
+	 * `..` is refused for the same reason, and so is any `.env` secret by name.
+	 * Bash is not covered here: its operands need a different, heuristic check
+	 * that waits for the S2 sandbox (#27).
+	 */
+	const denyReadTarget = (
+		toolName: string,
+		toolInput: Record<string, unknown>,
+	): ToolDecision | undefined => {
+		const root = realpathOfExistingPart(path.resolve(workspacePath));
+		const named: string[] = [];
+		for (const key of ["file_path", "path", "notebook_path"]) {
+			const value = toolInput[key];
+			if (typeof value === "string" && value !== "") named.push(value);
+		}
+		// Grep and Glob with no path search the working directory.
+		for (const target of named) {
+			const real = realpathOfExistingPart(path.resolve(workspacePath, target));
+			const relative = path.relative(root, real);
+			if (relative.startsWith("..") || path.isAbsolute(relative)) {
+				return {
+					behavior: "deny",
+					message: `${toolName} target ${target} is outside the leased workspace; agents may only read inside it`,
+				};
+			}
+			if (relative.split(path.sep).some(isEnvSecretName)) {
+				return {
+					behavior: "deny",
+					message: `${toolName} target ${target} is a .env secrets file; no agent may read it`,
+				};
+			}
+		}
+		const patterns: string[] = [];
+		if (toolName === "Glob" && typeof toolInput["pattern"] === "string") {
+			patterns.push(toolInput["pattern"]);
+		}
+		if (toolName === "Grep" && typeof toolInput["glob"] === "string") {
+			patterns.push(toolInput["glob"]);
+		}
+		for (const pattern of patterns) {
+			const segments = pattern.split(/[\\/]/);
+			if (
+				path.isAbsolute(pattern) ||
+				pattern.startsWith("~") ||
+				segments.includes("..") ||
+				/^[A-Za-z]:/.test(pattern)
+			) {
+				return {
+					behavior: "deny",
+					message: `${toolName} pattern ${pattern} reaches outside the leased workspace; use a path relative to it without ..`,
+				};
+			}
+			// A glob segment such as `.env*` or `.env.l*` can expand to a secret, so any
+			// segment that starts with `.env` and is not a named template is refused.
+			if (
+				segments.some(
+					(segment) => segment.startsWith(".env") && !ENV_TEMPLATE.test(segment),
+				)
+			) {
+				return {
+					behavior: "deny",
+					message: `${toolName} pattern ${pattern} names a .env secrets file; no agent may read it`,
+				};
+			}
+		}
+		return undefined;
+	};
+
 	const bashPatterns = effectiveAllowList.filter(
 		(pattern) => toolNameOfPattern(pattern) === "Bash",
 	);
@@ -785,6 +892,15 @@ export function buildCanUseTool(input: BuildCanUseToolInput): CanUseToolFn {
 				behavior: "deny",
 				message: `${toolName} is allowed here but not for ${JSON.stringify(toolMatchTarget(toolName, toolInput))}; this agent's ${toolName} entries are: ${patternsForTool.join(", ")}`,
 			};
+		}
+
+		if (isReadTool(toolName)) {
+			return (
+				denyReadTarget(toolName, toolInput) ?? {
+					behavior: "allow",
+					updatedInput: toolInput,
+				}
+			);
 		}
 
 		if (isWriteTool(toolName)) {

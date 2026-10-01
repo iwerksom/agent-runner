@@ -12,7 +12,7 @@
  * Exits non-zero if any assertion failed.
  */
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -784,6 +784,70 @@ console.log("\n[18] the safe-filter exemption applies to pipeline stages only (#
 			`denied, a filter standing alone is a command: ${JSON.stringify(command)}`,
 			(await verdict(command)) === "deny",
 		);
+	}
+}
+
+console.log(
+	"\n[19] Read, Grep and Glob stay inside the worktree, and never open .env secrets (#27)",
+);
+{
+	const work = await mkdtemp(path.join(os.tmpdir(), "arnold-smoke-reads-"));
+	const outside = await mkdtemp(path.join(os.tmpdir(), "arnold-smoke-outside-"));
+	try {
+		await writeFile(path.join(work, "README.md"), "hello\n");
+		await mkdir(path.join(work, "docs"));
+		await writeFile(path.join(work, ".env.local"), "SECRET=1\n");
+		await writeFile(path.join(work, ".env.example"), "SECRET=\n");
+		await writeFile(path.join(outside, "secret.txt"), "outside\n");
+		await symlink(outside, path.join(work, "link-out"));
+
+		const canUse = buildCanUseTool({
+			manifest: scoper,
+			workspacePath: work,
+			declaredTools: ["Read", "Grep", "Glob", "Bash"],
+		});
+		const verdict = async (tool: string, input: Record<string, unknown>) =>
+			(await canUse(tool, input)).behavior;
+
+		for (const [tool, input] of [
+			["Read", { file_path: path.join(work, "README.md") }],
+			["Read", { file_path: "README.md" }],
+			["Read", { file_path: ".env.example" }],
+			["Grep", { pattern: "hello" }],
+			["Grep", { pattern: "hello", path: "docs", glob: "*.md" }],
+			["Glob", { pattern: "**/*.md" }],
+			["Glob", { pattern: "*.md", path: work }],
+		] as const) {
+			check(
+				`allowed: ${tool} ${JSON.stringify(input)}`,
+				(await verdict(tool, input)) === "allow",
+			);
+		}
+		for (const [tool, input] of [
+			["Read", { file_path: "/etc/passwd" }],
+			["Read", { file_path: path.join(outside, "secret.txt") }],
+			["Read", { file_path: "../outside.txt" }],
+			["Read", { file_path: "link-out/secret.txt" }],
+			["Read", { file_path: path.join(work, ".env.local") }],
+			["Read", { file_path: ".env.local" }],
+			["Grep", { pattern: "SECRET", path: ".env.local" }],
+			["Grep", { pattern: "x", path: "/home" }],
+			["Grep", { pattern: "x", path: "link-out" }],
+			["Grep", { pattern: "SECRET", glob: ".env*" }],
+			["Grep", { pattern: "x", glob: "../**" }],
+			["Glob", { pattern: "/home/**/.ssh/*" }],
+			["Glob", { pattern: "../**/*" }],
+			["Glob", { pattern: "~/.ssh/*" }],
+			["Glob", { pattern: "*", path: "/" }],
+		] as const) {
+			check(
+				`denied: ${tool} ${JSON.stringify(input)}`,
+				(await verdict(tool, input)) === "deny",
+			);
+		}
+	} finally {
+		await rm(work, { recursive: true, force: true });
+		await rm(outside, { recursive: true, force: true });
 	}
 }
 
