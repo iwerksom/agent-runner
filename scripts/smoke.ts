@@ -34,6 +34,7 @@ import { manifest as prePrReview } from "../registry/example-repo/pre-pr-review.
 import { manifest as planWeek } from "../registry/example-repo/plan-week.js";
 import { manifest as scoper } from "../registry/example-repo/work-order-scoper.js";
 import { manifest as workQueue } from "../registry/example-repo/work-queue.js";
+import { manifest as ledtraadScoper } from "../registry/ledtraad/work-order-scoper.js";
 
 const checkout = process.argv[2];
 if (checkout === undefined) {
@@ -675,6 +676,43 @@ console.log("\n[16] the gate also runs as a PreToolUse hook, ahead of CLI auto-a
 		JSON.stringify(allowed) === "{}",
 		JSON.stringify(allowed),
 	);
+}
+
+console.log("\n[17] ledtraad's work-order-scoper: GitHub issues as tickets, read-only gh");
+{
+	// The binding's contract: one issue number is enough to run it, the Notary
+	// records that issue, and the only gh it may run reads one ledtraad issue.
+	const rendered = await renderPrompt(ledtraadScoper, { ticketKey: "#46" }, checkout);
+	const body = rendered.promptBody;
+	check("ticket key lands in the context block", body.includes("Ticket key: #46"));
+	check("branch spelling is given as issue-<n>", body.includes("issue-31-<kebab-slug>"));
+	check(
+		"an empty issueText tells the scoper to read the issue with gh",
+		body.includes("gh issue view <number> --repo iwerksom/ledtraad --json"),
+	);
+	check(
+		"the Notary records the dispatched issue",
+		JSON.stringify(extractRunTicketKeys(["#46"], "")) === JSON.stringify(["#46"]),
+		JSON.stringify(extractRunTicketKeys(["#46"], "")),
+	);
+	const canUse = buildCanUseTool({
+		manifest: ledtraadScoper,
+		workspacePath: checkout,
+		declaredTools: ["Read", "Grep", "Glob", "Bash"],
+	});
+	const verdict = async (command: string) => (await canUse("Bash", { command })).behavior;
+	check(
+		"reading the issue is allowed",
+		(await verdict("gh issue view 46 --repo iwerksom/ledtraad --comments")) === "allow",
+	);
+	for (const command of [
+		"gh issue view 46 --repo someone/else",
+		"gh issue edit 46 --repo iwerksom/ledtraad --add-label ready",
+		"gh issue comment 46 --repo iwerksom/ledtraad --body hi",
+		"python3 -c 'print(1)'",
+	]) {
+		check(`denied: ${command}`, (await verdict(command)) === "deny");
+	}
 }
 
 console.log(
