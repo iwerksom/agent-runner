@@ -9,12 +9,12 @@ saw, and what it produced.
 
 Point it at a checkout, write a manifest per agent, press Run.
 
-| Doc                                            | What it is                                                                             |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------- |
-| [`docs/HANDOVER.md`](docs/HANDOVER.md)         | **Start here.** What works today, what has never run, and how to get a first real run. |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md)       | Why the code looks like this. Read before changing anything structural.                |
-| [`docs/architecture.md`](docs/architecture.md) | The plan of record, written before the code.                                           |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md)           | Eight phases with acceptance criteria.                                                 |
+| Doc                                            | What it is                                                                            |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------- |
+| [`docs/HANDOVER.md`](docs/HANDOVER.md)         | **Start here.** What works today, what has run on which tree, and how to trace a run. |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md)       | Why the code looks like this. Read before changing anything structural.               |
+| [`docs/architecture.md`](docs/architecture.md) | The plan of record, written before the code.                                          |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md)           | Eight phases with acceptance criteria.                                                |
 
 This repo is Phase 0: single app, SQLite, in-process execution, no auth.
 
@@ -175,9 +175,11 @@ every write scope the model supports:
 | `fix-pr-comments`           | command  | `external-writes` | The most privileged tier, and the only `needs-human` agent                                                            |
 | `pr-loop-analyzer-subagent` | subagent | `external-writes` | The wider-scoped twin behind an id collision, registered so it is visible rather than silently shadowed               |
 
-**All eight are registered, but the gating they assume is not built yet.** There
-is no auth, so anything reaching the port can trigger any of them, including the
-ones that write to a real remote. See [`docs/HANDOVER.md`](docs/HANDOVER.md).
+**All eight are registered, and only the read-only and `artifacts` tiers can be
+triggered.** The rest carry a `disabled` reason and are held in code until
+Phase 3 brings auth and per-tier credentials. There is still no auth, so anything
+reaching the port can trigger the ones that are runnable. See
+[`docs/HANDOVER.md`](docs/HANDOVER.md).
 
 ## The thing worth understanding before adding an agent
 
