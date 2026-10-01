@@ -571,3 +571,28 @@ dispatch and query layer — `list_agents`, `dispatch_run`, `get_run`,
 vendor, trigger a team agent and read its history. It goes through the
 Dispatcher like every other caller, so every refusal in `dispatchRun` (archived
 repo, budget, execution mode, role) applies unchanged.
+
+## 26. Useful to its author before it is ready for a team
+
+The 2026-09-28 order (Section 0) put the vendor-agnostic test first and findings
+sixth, and kept every agent above `artifacts` held until auth, which came last.
+Two things made that the wrong order for a tool with one user.
+
+**Nothing in it paid off soon.** The first `doc-drift` run on ledtraad found five
+real, measured drifts, and they died in the transcript: Arnold records a count,
+not the findings, so a second run re-reports all five. The fix is a thin slice of
+ROADMAP Phase 7, and it needs none of the infrastructure ahead of it.
+
+**The hold could never lift.** The held agents give "no auth or per-tier
+credentials" as the reason, and Section 0 defers auth until someone other than
+the author uses the console. For the author on localhost that is never. But the
+risk the hold guards against is what an agent can _do_, not who pressed the
+button, and DECISIONS #22 already names the sandbox as the boundary that
+contains that. So in solo mode the sandbox releases `working-tree` and
+`draft-pr`; auth becomes a precondition for those tiers only once the console is
+shared.
+
+The order of work is now: useful on ledtraad, sandbox, mutating agents (Phase 4),
+harness spike, gateway, Postgres queue, registry split, the rest of findings,
+auth. Nothing was dropped; the vendor-agnostic steps run after the sandbox
+instead of before the first useful day.
