@@ -22,6 +22,7 @@ import { checkBudget, recordUsage } from "./ledger.js";
 import { recordProvenance } from "./notary.js";
 import { renderPrompt } from "./prompt.js";
 import {
+	gateAsPreToolUseHook,
 	isAbortError,
 	isErrorResult,
 	messageText,
@@ -225,6 +226,9 @@ export async function runAgent(runId: string): Promise<void> {
 			permissionMode: fullManifest.tools.permissionMode,
 			maxTurns: fullManifest.budget.maxTurns,
 			canUseTool,
+			// The same gate again, ahead of the CLI's own auto-approval of commands
+			// it judges read-only, which would otherwise never reach canUseTool.
+			hooks: { PreToolUse: [{ hooks: [gateAsPreToolUseHook(canUseTool)] }] },
 			abortController: inflight.abortController,
 			...(fullManifest.model === undefined ? {} : { model: fullManifest.model }),
 			// Opt-in tracing. A plugin installed with `--scope local` is bound to the

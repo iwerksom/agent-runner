@@ -12,7 +12,8 @@
  * locally keeps this file honest without pulling that graph in.
  */
 
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { HookCallback, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { CanUseToolFn } from "./writeScope.js";
 
 /** RunEvent.type values, matching the comment on the schema column. */
 export type RunEventType =
@@ -163,4 +164,30 @@ export function isAbortError(caught: unknown): boolean {
 		return caught.name === "AbortError" || /abort/i.test(caught.message);
 	}
 	return false;
+}
+
+/**
+ * The write-scope gate as a PreToolUse hook, so it runs before the CLI decides
+ * anything.
+ *
+ * `canUseTool` alone is not the whole gate: the CLI approves commands it judges
+ * read-only (`pwd`, `echo`, `cat` inside the cwd) without consulting it, so a
+ * read-only agent ran commands its allow-list denies (#14). PreToolUse fires for
+ * every tool call, ahead of that auto-approval. A denial here is final; an allow
+ * returns nothing, so the CLI's own checks and `canUseTool` still run after it
+ * and a hook can only narrow, never widen.
+ */
+export function gateAsPreToolUseHook(gate: CanUseToolFn): HookCallback {
+	return async (input) => {
+		if (input.hook_event_name !== "PreToolUse") return {};
+		const decision = await gate(input.tool_name, asRecord(input.tool_input) ?? {});
+		if (decision.behavior === "allow") return {};
+		return {
+			hookSpecificOutput: {
+				hookEventName: "PreToolUse",
+				permissionDecision: "deny",
+				permissionDecisionReason: decision.message,
+			},
+		};
+	};
 }
