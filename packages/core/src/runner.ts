@@ -15,7 +15,7 @@ import type { Agent, Repo, Run } from "@prisma/client";
 import { isTerminalStatus, type AgentManifest } from "./agents.js";
 import { publishRunEvent, publishRunStatus } from "./bus.js";
 import { collectArtifacts, parseOutcome, snapshotArtifacts } from "./collect.js";
-import { recordFindings } from "./findings.js";
+import { knownFindingsContext, recordFindings } from "./findings.js";
 import { prisma } from "./db.js";
 import { errorMessageOf, NotFoundError, ValidationError } from "./errors.js";
 import { parseJsonColumn, stringifyJsonColumn } from "./json.js";
@@ -160,11 +160,12 @@ export async function runAgent(runId: string): Promise<void> {
 			baseSha: lease.workspaceBaseSha,
 		});
 
-		const { promptBody, declaredTools } = await renderPrompt(
-			fullManifest,
-			args,
-			lease.workspacePath,
-		);
+		const rendered = await renderPrompt(fullManifest, args, lease.workspacePath);
+		const { declaredTools } = rendered;
+		const promptBody =
+			fullManifest.trackFindings === true && run.repoId !== null
+				? `${rendered.promptBody.trimEnd()}\n${await knownFindingsContext(run.repoId, run.agentId)}`
+				: rendered.promptBody;
 		const effectiveAllowList = intersectToolPatterns(
 			fullManifest.tools.allowedTools,
 			declaredTools,

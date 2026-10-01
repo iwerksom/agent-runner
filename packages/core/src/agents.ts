@@ -185,6 +185,13 @@ export type AgentManifest = {
 	 * labels in every chart.
 	 */
 	reasonCodes?: string[];
+	/**
+	 * The agent reports findings that Arnold keeps as rows. Each run is handed the
+	 * repo's open findings and must re-check them (`recheck` in its outcome JSON),
+	 * because a finding is closed by a re-measurement, never by being left out of
+	 * a later report. See packages/core/src/findings.ts.
+	 */
+	trackFindings?: boolean;
 	budget: {
 		dailyCostCapUsd: number;
 		maxTurns: number;

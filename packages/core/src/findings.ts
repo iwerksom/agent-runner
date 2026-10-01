@@ -4,8 +4,11 @@
  * An agent's outcome JSON may carry a `findings` array (doc-drift does, #32).
  * After each run this module turns that array into `Finding` rows and
  * reconciles them with what earlier runs reported: a finding already known is
- * refreshed, not duplicated, and an open finding the latest full run no longer
- * reports is closed. Without the closing half, a findings count only ever rises.
+ * refreshed, not duplicated. Closing is done by the agent re-measuring: each run
+ * is handed the open findings and reports `recheck` entries for them, and only
+ * a `fixed` one closes. Leaving a finding out of a report closes nothing,
+ * because the agent is not deterministic. Without a closing half, a findings
+ * count only ever rises.
  *
  * Identity is the fingerprint: agent + file + normalised claim. Never the line,
  * because lines move and that is what drift is.
@@ -75,27 +78,69 @@ export function parseFindings(payload: unknown): ParsedFinding[] | undefined {
 	return out;
 }
 
+export interface Recheck {
+	id: string;
+	status: "still-true" | "fixed" | "unmeasurable";
+	measured: string;
+}
+
 /**
- * Which open findings may this run close? Only a run that looked at everything
- * a finding could live in. A `--docs=` subset closes findings in those
- * documents only, and a run that stopped at `--max-findings` closes nothing,
- * because the findings it did not get to are not findings that went away.
+ * Read the `recheck` array: the agent's re-measurement of findings it was
+ * handed. Unknown statuses are dropped, so a garbled entry changes nothing.
  */
-export function closableScope(
-	payload: unknown,
-	args: Record<string, string> | undefined,
-	reported: number,
-): { files: Set<string> | "none" | "all" } {
-	const record = (payload ?? {}) as Record<string, unknown>;
-	const outcome = str(record.outcome);
-	if (outcome === "unmeasurable" || outcome === "unparsed") return { files: "none" };
-	const max = Number(args?.maxFindings);
-	if (Number.isFinite(max) && max > 0 && reported >= max) return { files: "none" };
-	const documents = record.documents;
-	if (Array.isArray(documents) && documents.length > 0) {
-		return { files: new Set(documents.map(str)) };
+export function parseRechecks(payload: unknown): Recheck[] {
+	if (typeof payload !== "object" || payload === null) return [];
+	const raw = (payload as Record<string, unknown>).recheck;
+	if (!Array.isArray(raw)) return [];
+	const out: Recheck[] = [];
+	for (const entry of raw) {
+		if (typeof entry !== "object" || entry === null) continue;
+		const e = entry as Record<string, unknown>;
+		const status = str(e.status);
+		const id = str(e.id).trim();
+		if (id === "" || (status !== "still-true" && status !== "fixed" && status !== "unmeasurable")) {
+			continue;
+		}
+		out.push({ id, status, measured: str(e.measured) });
 	}
-	return { files: "all" };
+	return out;
+}
+
+/**
+ * The section appended to a `trackFindings` agent's prompt: every open finding
+ * for this repo, with the command that measured it. Empty when there are none,
+ * which is the first run.
+ */
+export async function knownFindingsContext(repoId: string, agentId: string): Promise<string> {
+	const open = await prisma.finding.findMany({
+		where: { repoId, agentId, state: "open" },
+		orderBy: [{ file: "asc" }, { line: "asc" }],
+	});
+	if (open.length === 0) return "";
+	const rows = open.map((f) =>
+		JSON.stringify({
+			id: f.id,
+			file: f.file,
+			line: f.line,
+			claim: f.claim,
+			command: f.command,
+			lastMeasured: f.measured,
+		}),
+	);
+	return [
+		"",
+		"## Known findings to re-check",
+		"",
+		"These findings were reported by earlier runs and are still open. Re-run each",
+		"one's `command` and report it under `recheck` in your final JSON, by `id`:",
+		"`still-true` when the document still says what the claim quotes and the repo",
+		"still disagrees, `fixed` when the document now matches the repo (or the claim",
+		"is gone), `unmeasurable` when you cannot measure it here. Do not list a known",
+		"finding again under `findings`: that array is for problems not listed below.",
+		"",
+		...rows,
+		"",
+	].join("\n");
 }
 
 export interface ReconcileResult {
@@ -118,14 +163,11 @@ export async function recordFindings(
 		const run = await prisma.run.findUnique({ where: { id: runId } });
 		if (run === null || run.repoId === null) return undefined;
 		const { repoId, agentId } = run;
-		const args = run.args === null ? undefined : (JSON.parse(run.args) as Record<string, string>);
 		const now = new Date();
 		const result: ReconcileResult = { created: 0, refreshed: 0, closed: 0 };
-		const seen = new Set<string>();
 
 		for (const f of parsed) {
 			const fingerprint = fingerprintFor(agentId, f.file, f.claim);
-			seen.add(fingerprint);
 			const existing = await prisma.finding.findUnique({
 				where: { repoId_agentId_fingerprint: { repoId, agentId, fingerprint } },
 			});
@@ -161,19 +203,26 @@ export async function recordFindings(
 			}
 		}
 
-		const scope = closableScope(payload, args, parsed.length);
-		if (scope.files !== "none") {
-			const open = await prisma.finding.findMany({
-				where: { repoId, agentId, state: "open" },
-			});
-			for (const row of open) {
-				if (seen.has(row.fingerprint)) continue;
-				if (scope.files !== "all" && !scope.files.has(row.file)) continue;
+		// Closing is a re-measurement, never an omission. A finding the run did not
+		// mention stays open: the agent is not deterministic, and "did not look
+		// there this time" is not "fixed".
+		for (const check of parseRechecks(payload)) {
+			if (check.status === "unmeasurable") continue;
+			const row = await prisma.finding.findUnique({ where: { id: check.id } });
+			if (row === null || row.repoId !== repoId || row.agentId !== agentId) continue;
+			if (row.state !== "open") continue;
+			if (check.status === "fixed") {
 				await prisma.finding.update({
 					where: { id: row.id },
-					data: { state: "closed", closedAt: now, lastRunId: runId },
+					data: { state: "closed", closedAt: now, lastRunId: runId, measured: check.measured },
 				});
 				result.closed += 1;
+			} else {
+				await prisma.finding.update({
+					where: { id: row.id },
+					data: { lastRunId: runId, lastSeenAt: now, measured: check.measured },
+				});
+				result.refreshed += 1;
 			}
 		}
 		return result;

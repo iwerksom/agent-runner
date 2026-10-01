@@ -101,6 +101,17 @@ worth checking — then look for claims they do not cover.
 
 {{measurementNotes}}
 
+## Known findings
+
+If the end of this prompt has a "Known findings to re-check" section, earlier
+runs already reported those. Re-run each one's `command` first and settle it:
+`still-true`, `fixed`, or `unmeasurable`. That settlement, not your memory of
+the document, is what keeps a fixed finding from staying open and an unchanged
+one from being reported as new. Do not list a known finding under Findings
+again, even if you would word the claim differently. Your Findings are the
+problems that are **not** in that section. With no such section, every problem
+you find is new.
+
 ## Procedure
 
 1. Read every document in scope.
@@ -142,6 +153,7 @@ checkout. No speculation about what the value might be.
 It must be the last fenced block in your final message, and it must parse. It
 repeats every finding from the prose above as a structured entry, so a consumer
 never has to read the prose. The prose stays for people; the JSON is the record.
+Add one line to the prose too: "Re-checked: N still true, N fixed, N unmeasurable".
 
 ```json
 {
@@ -160,6 +172,9 @@ never has to read the prose. The prose stays for people; the JSON is the record.
 			"verdict": "document-stale | repo-changed | unclear",
 			"note": "one sentence, or an empty string"
 		}
+	],
+	"recheck": [
+		{ "id": "the id from the Known findings section", "status": "still-true | fixed | unmeasurable", "measured": "what the command printed now" }
 	]
 }
 ```
@@ -167,7 +182,9 @@ never has to read the prose. The prose stays for people; the JSON is the record.
 Rules for the array:
 
 - One entry per finding block above, in the same order, same wording. No finding
-  appears in only one of the two.
+  appears in only one of the two. Only new findings: known ones go under `recheck`.
+- `recheck` has one entry per known finding you were handed, and is `[]` when
+  there were none. Never drop a known finding from it because you ran short.
 - `file` is the document the claim is written in, and `line` is an integer.
   `measured` is always a string, even for a number.
 - `findings` is `[]` when there are none, never absent and never a count. The
