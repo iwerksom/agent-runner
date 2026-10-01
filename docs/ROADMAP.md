@@ -23,7 +23,10 @@ what is verified and what is known broken, lives in `docs/HANDOVER.md`.
 
 ## Phase 0: POC (execute, stream, record, collect)
 
-**Status: code complete, unverified against a real run.**
+**Status: verified.** Five runs in August 2026 on the pre-genericization tree,
+three against ledtraad on 2026-09-12, and six against a throwaway sandbox repo on
+2026-10-01, the last on the tree as merged. Read-only and `artifacts` tiers only;
+see `docs/HANDOVER.md`.
 
 Single Next.js app, SQLite via Prisma, in-process execution, EventEmitter feeding
 SSE, no auth, no queue, no worker. Two non-mutating agents registered from repo
