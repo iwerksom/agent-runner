@@ -175,22 +175,40 @@ Both are wrong for a tool that moves between employers.
 | `bus.ts`                     | Postgres `LISTEN/NOTIFY`. Redis is not introduced at all.                                                                                                                                                           |
 | `registry/`                  | Moves out to a registry repository loaded at runtime.                                                                                                                                                               |
 
-### Order of work, cheapest test first
+### Order of work, revised 2026-10-01: useful to its author first
 
-1. **Harness spike.** Run `doc-drift` against ledtraad through Claude Code and
+The 2026-09-28 order put the vendor-agnostic test first and findings sixth. That
+made Arnold's first useful day wait on five infrastructure steps, for a tool
+whose only user is its author. The first real `doc-drift` run on ledtraad
+(2026-10-01) showed the cost: five correct findings that existed only as prose,
+re-reported by every later run. So usefulness on ledtraad comes first, then the
+sandbox, which is what makes it safe to let agents write; the vendor-agnostic
+work follows unchanged (DECISIONS #26).
+
+1. **Useful on ledtraad.** `work-order-scoper` bound to ledtraad, with GitHub
+   issues as tickets. The thin slice of findings (ROADMAP Phase 7): `doc-drift`
+   emits structured findings; a `Finding` row with a fingerprint deduplicates
+   them across runs and closes what stops appearing; the console files a chosen
+   finding as a GitHub issue. No new infrastructure.
+2. **Sandbox.** One container profile per write scope, no credentials at
+   `read-only`; `writeScope.ts` relaxes to layer-3 duty. It also confines reads,
+   which the gate does not. In solo mode the sandbox, not auth, releases
+   `working-tree` and `draft-pr`.
+3. **Mutating agents** (ROADMAP Phase 4), on ledtraad: `pre-pr-review`, then
+   `work-queue` on the GitHub tracker binding.
+4. **Harness spike.** Run `doc-drift` against ledtraad through Claude Code and
    Codex, headless, via ACP or the CLI JSON stream, and normalise both event
    streams. If ACP does not hold up headless, this finds out in a day.
-2. **Gateway.** LiteLLM in front of both harnesses; cost and caps move there.
-3. **Sandbox.** One container profile per write scope, no credentials at
-   `read-only`; `writeScope.ts` relaxes to layer-3 duty.
-4. **Postgres and the queue.** A separate worker process replaces the in-process
+5. **Gateway.** LiteLLM in front of both harnesses; cost and caps move there.
+6. **Postgres and the queue.** A separate worker process replaces the in-process
    runner; SQLite goes.
-5. **Registry repository split.**
-6. **Findings** (ROADMAP Phase 7) — the feature that justifies the rest.
-7. **Auth**, once someone other than the author uses it.
+7. **Registry repository split.**
+8. **The rest of findings:** triage, scoper, order, queue, executor.
+9. **Auth**, once someone other than the author uses it. From then on it gates
+   the tiers above `read-only` for everyone but the author.
 
-Steps 1 to 3 settle whether vendor-agnosticism is real before anything is spent
-on team features.
+Steps 4 and 5 still settle whether vendor-agnosticism is real before anything is
+spent on team features; they just no longer come before the author can use it.
 
 ### What this supersedes further down
 

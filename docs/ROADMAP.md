@@ -13,11 +13,13 @@ phase replaces a component behind that sentence without rewriting the shape.
 Design detail lives in `docs/architecture.md`. Current build state, including
 what is verified and what is known broken, lives in `docs/HANDOVER.md`.
 
-> **Pending rewrite (2026-09-28).** `docs/architecture.md` Section 0 re-scopes
-> Arnold as a vendor-agnostic team tool, and DECISIONS #21 to #25 record why.
-> The phases below still name Redis, BullMQ and the Agent SDK as the execution
-> layer; where they do, Section 0's order of work supersedes them: harness spike,
-> gateway, sandbox, Postgres queue, registry split, findings, auth.
+> **Pending rewrite (2026-09-28, order revised 2026-10-01).** `docs/architecture.md`
+> Section 0 re-scopes Arnold as a vendor-agnostic team tool, and DECISIONS #21 to
+> #26 record why. The phases below still name Redis, BullMQ and the Agent SDK as
+> the execution layer; where they do, Section 0's order of work supersedes them:
+> useful on ledtraad (the scoper binding and a thin slice of Phase 7), sandbox,
+> mutating agents (Phase 4), harness spike, gateway, Postgres queue, registry
+> split, the rest of findings, auth.
 
 ---
 
@@ -163,6 +165,11 @@ Phase 0, at the maintainer's request. So the manifests exist but the gating they
 assume does not. Treat this phase as "make the guarantees real", not "write the
 manifests".
 
+**Revised 2026-10-01.** This phase is step 3 of Section 0's order, right after
+the sandbox, and its first target is ledtraad. In solo mode the sandbox releases
+the hold on `working-tree` and `draft-pr`; auth is not a precondition until
+someone other than the author uses the console (DECISIONS #26).
+
 **Acceptance criteria**
 
 - Every guardrail in each prompt body is encoded in its manifest, not just
@@ -274,10 +281,16 @@ consumer role is vacant and its contract is already written.
   structuring findings pays for itself, and it is what makes documentation work
   safe for an unattended executor at all.
 - The first consumer is honest about its limits. `doc-drift` runs on ledtraad,
-  which has no CI and no PR flow, and `registry/ledtraad/index.ts` states that
-  nothing in it may write to the repo. So the chain terminates there at reviewed
-  findings in the console; the executor leg is proven on a repo that already has
-  a queue. ledtraad is not granted `draft-pr` to make a demo complete.
+  and `registry/ledtraad/index.ts` states that nothing in it may write to the
+  repo. Since 2026-09-28 ledtraad has a GitHub Project board, PRs and a `finding`
+  label, so the chain's first leg ends there: a reviewed finding is filed as a
+  ledtraad issue by the operator, from the console. Filing writes to the
+  tracker, not the repo, and only on a click. The executor leg waits for the
+  sandbox and Phase 4. ledtraad is not granted `draft-pr` to make a demo
+  complete.
+- **Revised 2026-10-01:** the first three criteria above (durable rows, the
+  fingerprint, auto-close) plus structured output from `doc-drift` and filing to
+  GitHub are step 1 of Section 0's order. The rest of the chain is step 8.
 
 ---
 
