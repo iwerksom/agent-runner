@@ -227,6 +227,14 @@ export async function runAgent(runId: string): Promise<void> {
 			canUseTool,
 			abortController: inflight.abortController,
 			...(fullManifest.model === undefined ? {} : { model: fullManifest.model }),
+			// Opt-in tracing. A plugin installed with `--scope local` is bound to the
+			// checkout's own path, and a leased worktree never has that path, so
+			// `mlflow autolog claude` alone traces nothing here. Naming the plugin
+			// directory loads it explicitly. Its hooks run outside canUseTool, so
+			// this is an operator setting, never a manifest one. Unset: no plugin.
+			...(process.env.ARNOLD_TRACE_PLUGIN_DIR
+				? { plugins: [{ type: "local", path: process.env.ARNOLD_TRACE_PLUGIN_DIR }] }
+				: {}),
 		};
 
 		let assistantText = "";
