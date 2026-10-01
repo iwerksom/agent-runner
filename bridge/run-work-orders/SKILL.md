@@ -51,10 +51,22 @@ Run `git diff --stat <base> origin/<default branch> -- <those paths>`. Any
 change means the order's line numbers and premises may be wrong: park with
 reason `stale-premise`. If `<base>` is unknown to git, park too.
 
-d. **Branch.** Use the name on the order's `**Branch:**` line exactly. If it
+d. **Is the problem still there.** Unchanged files do not mean the problem is
+unchanged: a fix elsewhere can make the order pointless. Find the order's
+behavioural premise, meaning the failure its `## Goal` says it fixes (a failing
+test or case, a regression, a wrong count). The scoper is told to list it first
+under `## Escalation`, with the command that measures it. Measure it on the
+default branch **before creating the branch or editing anything**. If the
+problem does not occur, park with reason `stale-premise` and put the
+measurement in the comment. Never "proceed with the order as written" past a
+premise you have just seen to be false. If the order states no measurable
+premise, or measuring it needs something this machine lacks, say so in the
+report and continue.
+
+e. **Branch.** Use the name on the order's `**Branch:**` line exactly. If it
 already exists locally or on origin, park with reason `branch-exists`.
 
-e. Read the repo's `CLAUDE.md` (and anything it says to read before changing
+f. Read the repo's `CLAUDE.md` (and anything it says to read before changing
 code). Its rules apply on top of the order.
 
 ## 3. Execute
