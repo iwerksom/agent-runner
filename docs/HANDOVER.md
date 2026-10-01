@@ -4,8 +4,9 @@ State of the project as of the last working session. Written for whoever picks
 this up next, including a future you with no memory of building it.
 
 If you read only one thing: **the current tree runs.** On 2026-10-01 a read-only
-agent completed five runs against a throwaway sandbox repo on the code as merged,
-and with `ARNOLD_TRACE_PLUGIN_DIR` set each run also lands as an MLflow trace.
+agent completed six runs against a throwaway sandbox repo, the last on the tree
+as merged with PRs #6–#8, and with `ARNOLD_TRACE_PLUGIN_DIR` set each run also
+lands as an MLflow trace.
 Only the read-only and `artifacts` tiers have run; everything above them is held
 in code until Phase 3. Everything below is either verified, or honestly marked
 as not.
@@ -124,7 +125,7 @@ can now only be archived.
 | ---------- | ---------- | ------------------- | ---- | ---------- | -------------------------------------------------------- |
 | 2026-09-12 | `ledtraad` | `docid-invariant`   | 1    | $0.93      | First run after the placeholder fix                      |
 | 2026-09-12 | `ledtraad` | `doc-drift`         | 2    | $1.78/1.59 | 39 and 34 turns; sized the agent's budget                |
-| 2026-10-01 | `sandbox`  | `sandbox-doc-drift` | 5    | $0.10–0.32 | After the tracker-binding merge; found all planted drift |
+| 2026-10-01 | `sandbox`  | `sandbox-doc-drift` | 6    | $0.10–0.32 | After the tracker-binding merge; found all planted drift |
 
 `sandbox` is a throwaway local repo (`registry/sandbox/`) whose README carries
 three deliberate drifts, so a run is either right or wrong. It is the cheapest
@@ -163,7 +164,6 @@ figures undercount by roughly 3×. **The ledger is the source of truth for cost.
 | CLI auto-approval precedes `canUseTool`                  | The Claude Code CLI approves commands it judges read-only before the callback runs. On 2026-10-01 a read-only agent ran `pwd`, `echo` and `cat`, all of which `canUseTool` denies. The allow-list is not yet the whole gate. |
 | User-level skills load into runs                         | `settingSources: ["project"]` does not keep `~/.claude` skills out: they appear in the SDK init event's slash commands.                                                                                                      |
 | `Agent.id` is global                                     | One prompt bound to two repos needs two ids (`doc-drift`, `sandbox-doc-drift`); a shared id would overwrite the other repo's row on sync.                                                                                    |
-| Smoke [6] needs the example-repo fixture                 | Its two checks expect `.pr-loop/reports/*.md` in the checkout; against any other repo they fail while the code path is fine.                                                                                                 |
 | Five runs detached from their repo                       | `repoId` is null on every historical run because the old repo row was deleted. Not recoverable; DECISIONS #16 stops it recurring.                                                                                            |
 | The reference registry points at a repo you may not have | `registry/example-repo/` describes agents from one specific project. Keep them as worked examples; add your own directory.                                                                                                   |
 
