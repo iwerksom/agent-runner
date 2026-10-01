@@ -19,6 +19,7 @@
 		"env:check": "node scripts/with-env.mjs --require=DATABASE_URL,ANTHROPIC_API_KEY node -e \"console.log('env ok: DATABASE_URL and ANTHROPIC_API_KEY are set')\"",
 		"check:rsc": "node scripts/check-rsc-boundaries.mjs",
 		"smoke": "tsx scripts/smoke.ts",
+		"orders:publish": "node scripts/with-env.mjs --require=DATABASE_URL tsx scripts/publish-order.ts",
 		"typecheck:offline": "node scripts/make-prisma-typestub.mjs && tsc -p tsconfig.verify.json --noEmit",
 		"format": "prettier --write .",
 		"format:check": "prettier --check ."

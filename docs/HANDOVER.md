@@ -132,6 +132,27 @@ three deliberate drifts, so a run is either right or wrong. It is the cheapest
 way to prove a change end to end without pointing Arnold at a real project. Add
 it from `/repos` with the local path of any small git repo of the same shape.
 
+### Executing work orders: a temporary bridge
+
+Until `work-queue` runs on a repo (Section 0 step 3, #36), an accepted work
+order reaches code through GitHub and a Claude Code skill, outside Arnold:
+
+1. Run a `*-work-order-scoper` binding on an issue, e.g. `#41` on ledtraad.
+2. `pnpm orders:publish <runId>` posts the order as a comment on that issue,
+   marked with the run id and the base SHA it was scoped at, and labels the
+   issue `wo:proposed`. `--dry-run` prints it instead. It refuses a failed run,
+   a rejected order, and any agent other than a scoper.
+3. The repo owner approves by swapping the label to `wo:approved`.
+4. In that repo, ask Claude Code to run approved work orders. The skill
+   (`bridge/run-work-orders/SKILL.md`, symlinked into `~/.claude/skills`)
+   executes only orders the owner approved after the order was posted, parks
+   an order whose files changed since its base SHA, and ends at a draft PR with
+   `Closes #<n>`. It never merges.
+
+GitHub is the queue because it persists and shows on the board, which
+`.week-plan/queue.jsonl` in a leased worktree does not. Delete
+`scripts/publish-order.ts`, `bridge/` and the symlink when #36 lands.
+
 ### Tracing runs in MLflow
 
 Opt-in, and off unless `ARNOLD_TRACE_PLUGIN_DIR` is set.
