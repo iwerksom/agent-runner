@@ -20,10 +20,19 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { SpawnedProcess, SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
-import type { AgentManifest } from "./agents.js";
+import type { AgentManifest, WriteScope } from "./agents.js";
 import { ValidationError } from "./errors.js";
 import { githubRepoFromRemote } from "./filing.js";
 import { repoRoot } from "./paths.js";
+
+/** The write scopes that have a sandbox profile. `external-writes` does not yet. */
+export const SANDBOXED_SCOPES: readonly WriteScope[] = [
+	"read-only",
+	"artifacts",
+	"working-tree",
+	"branch-push",
+	"draft-pr",
+];
 
 export const SANDBOX_IMAGE = process.env.ARNOLD_SANDBOX_IMAGE ?? "arnold-sandbox:dev";
 
