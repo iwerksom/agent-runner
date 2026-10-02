@@ -20,8 +20,21 @@
  * an idle one.
  */
 
-import type { AgentSummary, RepoDto, RunDetail, RunStatus, RunSummary } from "@/components/types";
-import { loadAgentSummaries, loadRepoDtos, loadRunDetail, loadRunSummaries } from "@/lib/queries";
+import type {
+	AgentSummary,
+	FindingDto,
+	RepoDto,
+	RunDetail,
+	RunStatus,
+	RunSummary,
+} from "@/components/types";
+import {
+	loadAgentSummaries,
+	loadFindings,
+	loadRepoDtos,
+	loadRunDetail,
+	loadRunSummaries,
+} from "@/lib/queries";
 
 /** Never throws. Logs and returns the caller's fallback, which the UI renders as an empty state. */
 async function read<T>(label: string, run: () => Promise<T>, fallback: T): Promise<T> {
@@ -84,4 +97,10 @@ export async function fetchRuns(query: RunQuery = {}): Promise<RunSummary[]> {
 
 export async function fetchRun(runId: string): Promise<RunDetail | undefined> {
 	return read("fetchRun", () => loadRunDetail(runId), undefined);
+}
+
+export async function fetchFindings(
+	options: { repoSlug?: string; state?: string } = {},
+): Promise<FindingDto[]> {
+	return read("fetchFindings", () => loadFindings(options), []);
 }

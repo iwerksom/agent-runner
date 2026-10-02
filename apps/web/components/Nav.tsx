@@ -24,7 +24,7 @@
 
 import { Suspense } from "react";
 import { Chip } from "@heroui/react";
-import { Bot, FolderGit2, ListOrdered } from "lucide-react";
+import { Bot, FolderGit2, ListOrdered, SearchCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { RepoSwitcher } from "@/components/RepoSwitcher";
@@ -39,6 +39,7 @@ function RepoSwitcherFallback() {
 const LINKS = [
 	{ href: "/", label: "Agents", icon: Bot },
 	{ href: "/runs", label: "Runs", icon: ListOrdered },
+	{ href: "/findings", label: "Findings", icon: SearchCheck },
 	{ href: "/repos", label: "Repos", icon: FolderGit2 },
 ] as const;
 

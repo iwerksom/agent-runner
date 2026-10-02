@@ -184,3 +184,26 @@ export type RepoRemovalPlan = {
 	canArchive: boolean;
 	deleteBlockers: string[];
 };
+
+/** A finding row as the findings page renders it. Dates are ISO strings. */
+export type FindingDto = {
+	id: string;
+	repoSlug: string;
+	agentId: string;
+	title: string;
+	file: string;
+	line: number | null;
+	claim: string;
+	measured: string;
+	command: string;
+	verdict: string;
+	note: string;
+	state: "open" | "filing" | "filed" | "closed";
+	issueNumber: number | null;
+	issueUrl: string | null;
+	sourceRunId: string;
+	firstSeenAt: string;
+	lastSeenAt: string;
+};
+
+export const FINDING_STATES = ["open", "filed", "closed"] as const;
