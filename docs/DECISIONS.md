@@ -686,6 +686,12 @@ container, and the run still records its cost.
 `import.meta.url` fails inside the Next server, because the bundler rewrites both.
 The path is found on the file system from the repo root instead.
 
+**Artifacts tier, checked end to end:** a throwaway agent (`sandbox-readme-report`,
+write scope `artifacts`, glob `reports/*.md`) wrote its one file through the single
+writable mount, owned by the host user, and the runner collected it as an
+artifact ($0.12, 4 turns). A glob at the workspace root is refused because it
+cannot be narrowed to a directory.
+
 **Still open:** profiles for `working-tree` and above (they throw, so they cannot
 run sandboxed by accident), the solo-mode release (#35) with a canary self-test,
 and network egress, which waits for the gateway (Phase 4).
