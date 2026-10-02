@@ -1,41 +1,28 @@
 # Arnold: Roadmap
 
-Nine phases (0 to 8). Phases 1 to 6 are each a component swap behind a contract
-that does not change; Phases 7 and 8 add capabilities rather than replacing an
-implementation:
+Eleven phases (0 to 10), **numbered in the order they are built**: Phase 1 is
+built first, then Phase 2, and so on. **Phases 0 and 1 are built; Phase 2 is
+next.** When priorities change the phases are renumbered, and the renumbering is
+recorded in `docs/DECISIONS.md` (#27) so history stays traceable. Phases 9 and 10
+are not scheduled.
+
+Phases 5, 6 and 9 are each a component swap behind a contract that does not
+change; the others add capability:
 
 > **The API enqueues, something else executes against a leased workspace, and
 > runs are durable records with declared artifacts.**
 
 Phase 0 runs the executor in-process with SQLite and an EventEmitter. Every later
-phase replaces a component behind that sentence without rewriting the shape.
-
-Design detail lives in `docs/architecture.md`. Current build state, including
-what is verified and what is known broken, lives in `docs/HANDOVER.md`.
+phase replaces a component behind that sentence, or adds a capability on top of
+it, without rewriting the shape.
 
 > **This roadmap is the single source of truth** for what Arnold is building and
-> in what order. Work is named by phase and by feature (`7.2` is the second
-> feature of Phase 7); the feature docs are in `docs/features/`, each with a user
-> story and its GitHub issues. Other documents give the reasons and the shape:
-> `docs/architecture.md` is the target architecture and `docs/DECISIONS.md` records
-> why; neither sets the order.
-
-## Build order
-
-What is built next, by feature. Phases are numbered by what they are, not by when
-they are built; this list is the sequence.
-
-1. **Useful on ledtraad, Phase 7:** 7.1, 7.2 and 7.3 (done), plus 4.2 (done).
-2. **Phase 3, sandbox:** 3.1 one container per write scope; 3.2 finishes the gate.
-3. **Phase 4, mutating agents:** 4.1 on ledtraad.
-4. **Phase 8, vendor-agnostic harnesses:** 8.1 harness spike, then 8.2 gateway,
-   with 8.3 scoring alongside.
-5. **Phase 1:** 1.1 Postgres and a queue.
-6. **Phase 2:** 2.1 registry repository.
-7. **Phase 7:** 7.4 the rest of the findings chain.
-8. **Phase 3:** 3.3 auth, once someone other than the author uses the console.
-
-Phases 5 and 6 are not scheduled; 5.1 (accurate spend) is picked up with 8.2.
+> in what order. Work is named by phase and by feature (`2.1` is the first feature
+> of Phase 2); the feature docs are in `docs/features/`, each with a user story and
+> its GitHub issues. `docs/architecture.md` is the target architecture,
+> `docs/DECISIONS.md` records why, and `docs/HANDOVER.md` holds the current build
+> state, including what is verified and what is known broken. None of them sets
+> the order.
 
 ---
 
@@ -86,113 +73,90 @@ storage, scheduling, subagent trees, any mutating agent.
 
 ---
 
-## Phase 1: Real infrastructure
+---
 
-Split the executor into its own process. Postgres holds the queue and
-`LISTEN/NOTIFY` carries the `run:<id>` channel (Redis and BullMQ, which this
-phase first named, are dropped: DECISIONS #21 to #26). SSE subscribes to
-Postgres instead of the in-process bus. SQLite becomes Postgres. Artifacts move to an S3-compatible store. The
-worktree pool gets proper leasing and dirty-destroy semantics.
+## Phase 1: Useful on ledtraad
+
+**Status: built; one live check outstanding** (a real File issue click on
+ledtraad). Built 2026-10-01 and 2026-10-02.
+
+The first phase after the proof of concept makes Arnold useful to its author on a
+real repo before anything else is built (DECISIONS #26). An agent's findings
+used to die in the transcript: `doc-drift` reported four stale claims and
+recorded `"findings": 4`, a **count**, so nothing downstream could address finding
+#3 and every later run re-reported the same four. This phase turns findings into
+durable rows that can be filed as issues, and gives an accepted work order a path
+to code, using only what exists: the scoper, `gh`, and a Claude Code skill. No new
+infrastructure.
 
 **Features**
 
-- [1.1 Postgres and a queue, with a separate worker](features/1.1-postgres-and-queue.md): Planned (#22)
+- [1.4 Approved work orders reach code](features/1.4-approved-work-orders-reach-code.md): Done (#31, #40)
+- [1.1 doc-drift emits structured findings](features/1.1-structured-findings.md): Done (#32)
+- [1.2 Finding rows with a fingerprint](features/1.2-finding-rows.md): Done (#33)
+- [1.3 Findings view: file a reviewed finding as an issue](features/1.3-findings-view.md): Done (#34)
 
 **Acceptance criteria**
 
-- The web tier no longer imports the Agent SDK, and `ANTHROPIC_API_KEY` is not
-  present in its environment.
-- A run survives a web-tier restart: reconnecting to the SSE endpoint replays
-  persisted events and then resumes live.
-- Two runs against the same repo execute concurrently in separate worktrees
-  without interfering.
-- `bus.ts` is replaced by a Postgres `LISTEN/NOTIFY` implementation and no other
-  file changes.
-- The JSON-as-TEXT columns become real `Json`, and the String status columns
-  become Postgres enums.
+- [x] `doc-drift` emits each finding as a structured entry (file, line, claim,
+      measured value, command, verdict, note), and the prose report stays.
+- [x] A finding is a durable row, not a count: `Finding` carries repo, source run,
+      fingerprint, title, file, verdict and state.
+- [x] **The fingerprint is not `file:line`.** Lines move; that is what drift _is_.
+      Known findings are not re-reported as new: each run is handed the open
+      findings and re-checks each by id.
+- [x] A finding is closed by re-measurement. Only a `fixed` re-check closes one; a
+      finding a run does not mention stays open, because the agent is not
+      deterministic. A findings count that only ever rises is a lying count.
+- [x] `/findings` lists open, filed and closed findings per repo. Filing creates an
+      issue on the repo's own GitHub tracker; it writes to the tracker, never the
+      repo, and only on the operator's click.
+- [x] `work-order-scoper` is bound to ledtraad with GitHub issues as tickets, and
+      an accepted order reaches code through a temporary bridge skill after the
+      operator approves it.
+- [ ] A real File issue click has been made on ledtraad.
 
 ---
 
-## Phase 2: Registry sync, repo management, and run trees
+## Phase 2: Sandbox and a hardened gate
 
-Registry sync with `unregistered` / `orphaned` states and argument-drift
-warnings. Target repositories managed from the console rather than the
-environment. Subagent and harness child runs with cost roll-up. Register the
-first `harness` agent. Outcome parsing for JSONL streams, and the first
-outcome-mix chart.
+**Status: next.** The gate is mostly hardened; the sandbox is not started.
 
-**Note:** repo management and the repo switcher were built early, during Phase 0,
-at the maintainer's request. The screens and the API exist and are listed as done
-below. What is _not_ done is the part that belongs to Phase 3: registering a repo
-is an unauthenticated action, so anyone reaching the port can point Arnold at any
-path on the host. Treat the remaining work as gating, not building.
+One container profile per write scope, so a read-only run provably cannot read
+secrets, write or push, whatever the agent tries. The tool gate in
+`writeScope.ts` stays as a second layer. In solo mode the sandbox, not auth,
+releases the held `working-tree` and `draft-pr` tiers (DECISIONS #26), because
+the risk the hold guards against is what an agent can do, not who pressed the
+button.
 
 **Features**
 
-- [2.1 The registry lives in its own repository](features/2.1-registry-in-own-repository.md): Planned (#23, #16)
+- [2.1 One container sandbox per write scope](features/2.1-sandbox-per-write-scope.md): Planned (#21, #35)
+- [2.2 The gate refuses what it should, and nothing else](features/2.2-gate-hardening.md): In progress (#12, #14, #37, #27, #15)
 
 **Acceptance criteria**
 
-- Adding a command to a target repo's `.claude/commands/` and hitting sync makes
-  it appear as `unregistered` with no console code change.
-- [x] A repo is registered, edited and retired from the console, with no edit to
-      `.env.local` and no re-run of `pnpm seed`. No repo is seeded at all:
-      `/repos` works on an empty database, and saving a repo syncs its agents.
-- [x] A candidate checkout is probed before it is accepted: a path that does not
-      exist or is not a git checkout is refused at registration time, with the
-      reason, rather than failing inside a workspace lease minutes into a run.
-- [x] A repo that any run references cannot be deleted, only archived. Archiving
-      keeps every run, artifact and outcome and removes the repo from the
-      switcher. See DECISIONS #16.
-- [x] The console is scoped to one repo, or to all of them, from a switcher in
-      the nav, and the choice survives navigating between Agents and Runs.
-- [ ] A repo registered in the console with no `registry/<slug>/` directory
-      reports why it has no agents, rather than rendering as an empty group.
-- Deleting a prompt file marks its agent `orphaned`, disables the Run button, and
-  preserves run history.
-- An `argument-hint` that stops matching the manifest's positional args raises a
-  drift warning.
-- A harness run renders as a parent with one child run per batch, and the
-  parent's cost equals the sum of its children.
-- Metrics JSONL lines become `RunOutcome` rows, and the outcome mix is charted
-  over time.
-- Reason-code vocabularies stay per agent. Two agents using different words for
-  the same idea must not be merged into one enum.
-
----
-
-## Phase 3: Auth and write-scope gating
-
-Auth.js against an identity provider. Viewer, operator, admin. Write scope gates
-triggering. Credentials mounted per tier, so a read-only run provably cannot
-push. Audit trail on every run.
-
-**Features**
-
-- [3.1 One container sandbox per write scope](features/3.1-sandbox-per-write-scope.md): Planned (#21, #35)
-- [3.2 The gate refuses what it should, and nothing else](features/3.2-gate-hardening.md): In progress (#12, #14, #37, #27, #15)
-- [3.3 Auth, once someone other than the author uses it](features/3.3-auth.md): Planned (#25)
-
-**Acceptance criteria**
-
-- Role floors hold: `read-only` viewer, `external-writes` admin, everything else
-  operator.
 - A `read-only` or `artifacts` run has no push credential and no forge token in
   its environment, so the tool policy and the environment both refuse.
-- Registering an agent, raising its write scope, or granting `mainBookkeeping`
-  requires admin.
-- Registering, editing or removing a **repo** requires admin. This is the widest
-  unauthenticated capability Phase 0 has: a repo row names a filesystem path that
-  Arnold will clone and run agents against, so until this lands the console must
-  not be exposed beyond localhost.
-- Every run records who triggered it.
-- The guarded-push helper refuses a `mainBookkeeping` push whose staged diff
-  touches a path outside the declared globs, or whose commit message lacks
-  `[skip ci]`.
+- `read-only`: worktree mounted read-only, no network except the gateway, no
+  credentials. `artifacts`: one writable output directory. `working-tree`:
+  writable worktree, no credentials. `branch-push` and up: a forge token scoped
+  to one repo.
+- Reads are confined to the worktree, including Bash operands of allow-listed
+  programs.
+- A solo-mode setting: in it, a held tier is runnable once its sandbox profile
+  exists. Outside solo mode the hold still needs auth (Phase 8).
+- [x] No allow-listed command can run arbitrary code, and the gate runs ahead of
+      the CLI's own auto-approval.
+- [x] Separators inside quotes do not split a command; the safe-filter exemption
+      applies only after a pipe.
+- [x] `Read`, `Grep` and `Glob` stay inside the worktree and never open `.env`
+      secrets.
+- [ ] User-level skills from the operator's `~/.claude` do not load into runs.
 
 ---
 
-## Phase 4: Mutating agents
+## Phase 3: Mutating agents
 
 Register `pre-pr-review` (`working-tree`), then `work-queue` (`draft-pr`), then
 `fix-pr-comments` (`external-writes`, `needs-human`) with the `awaiting_input`
@@ -203,15 +167,14 @@ Phase 0, at the maintainer's request. So the manifests exist but the gating they
 assume does not. Treat this phase as "make the guarantees real", not "write the
 manifests".
 
-**Revised 2026-10-01.** This phase is built after the Phase 3 sandbox (feature
-3.1), and its first target is ledtraad (feature 4.1). In solo mode the sandbox
-releases the hold on `working-tree` and `draft-pr`; auth (feature 3.3) is not a
-precondition until someone other than the author uses the console (DECISIONS #26).
+**Revised 2026-10-01.** This phase is built after the Phase 2 sandbox, and its
+first target is ledtraad. In solo mode the sandbox releases the hold on
+`working-tree` and `draft-pr`; auth (Phase 8) is not a precondition until someone
+other than the author uses the console (DECISIONS #26).
 
 **Features**
 
-- [4.1 Mutating agents on ledtraad](features/4.1-mutating-agents-on-ledtraad.md): Planned (#36, #26, #53)
-- [4.2 Approved work orders reach code](features/4.2-approved-work-orders-reach-code.md): Done (#31, #40)
+- [3.1 Mutating agents on ledtraad](features/3.1-mutating-agents-on-ledtraad.md): Planned (#36, #26, #53)
 
 **Acceptance criteria**
 
@@ -243,55 +206,132 @@ precondition until someone other than the author uses the console (DECISIONS #26
 
 ---
 
-## Phase 5: Scheduling and budget
+---
 
-Schedules share the enqueue path with the UI, so cron and a button are one route.
-Per-agent and per-repo caps with a ledger UI.
+## Phase 4: Vendor-agnostic harnesses
+
+Arnold owns the record and rents the loop (`docs/architecture.md` Section 0): it
+runs existing coding-agent harnesses (Claude Code, Codex, and later Gemini CLI
+and OpenCode) behind one adapter, instead of rebuilding tool calling, file
+editing and context management on a model API. A gateway in front of them holds
+cost, caps and provider keys. This phase settles whether vendor-agnosticism is
+real before anything is spent on team features.
 
 **Features**
 
-- [5.1 Spend is recorded accurately](features/5.1-spend-recorded-accurately.md): In progress (#38, #20)
+- [4.4 Spend is recorded accurately](features/4.4-spend-recorded-accurately.md): In progress (#38, #20)
+- [4.1 Harness spike: doc-drift through Claude Code and Codex](features/4.1-harness-spike.md): Planned (#17)
+- [4.2 LLM gateway in front of both harnesses](features/4.2-llm-gateway.md): Planned (#19)
+- [4.3 Score runs against the planted-drift sandbox](features/4.3-score-runs.md): Planned (#18)
 
 **Acceptance criteria**
 
-- A scheduled run and a UI-triggered run differ only by the `trigger` column.
-- A run is refused before it starts when either the global or the per-agent daily
-  cap is already spent, and the refusal is visible as `budget_stopped`.
-- The ledger UI shows spend by day, by agent, and by repo against configured
-  caps.
+- `doc-drift` runs headless through Claude Code and through Codex, each via ACP
+  or its CLI JSON stream, and both event streams normalise into one `RunEvent`
+  shape that the console renders. A DECISIONS entry records which transport and
+  why.
+- A `Harness` interface (`start(spec, sandbox)` yielding normalised events,
+  `cancel()`, `capabilities`) with `claude-code` as one implementation; the raw
+  vendor payload is kept beside each normalised event.
+- The worker holds no provider API key: a gateway holds the keys, and a run holds
+  a virtual key capped to its budget. The ledger reads spend from the gateway.
+- Each harness adapter states what it loads from the host, so two operators get
+  the same agent.
+- A run can be scored against the sandbox's planted drifts, so a prompt change or
+  a second harness is compared by number.
+
+- A run that fails or hits its turn limit still records its cost, and MLflow shows
+  the ledger's cost and tokens rather than undercounting them.
+
+**Depends on** Phase 2 (the sandbox profile is what the harness runs inside).
 
 ---
 
-## Phase 6: Reach
+---
 
-The local-session runner, so agents needing a browser or another locally-bound
-resource can run from the console. A second repo onboarded to prove the
-multi-repo model. The "needs you" page as the primary landing view.
+## Phase 5: Real infrastructure
 
-**Features:** none defined yet.
+Split the executor into its own process. Postgres holds the queue and
+`LISTEN/NOTIFY` carries the `run:<id>` channel (Redis and BullMQ, which this
+phase first named, are dropped: DECISIONS #21 to #26). SSE subscribes to
+Postgres instead of the in-process bus. SQLite becomes Postgres. Artifacts move to an S3-compatible store. The
+worktree pool gets proper leasing and dirty-destroy semantics.
+
+**Features**
+
+- [5.1 Postgres and a queue, with a separate worker](features/5.1-postgres-and-queue.md): Planned (#22)
 
 **Acceptance criteria**
 
-- A local executor authenticates to the console, picks up jobs whose agent is
-  `needs-local-session`, executes them with the same `runAgent` code path, and
-  publishes events back. The enqueue contract does not change; only which
-  executor claims the job.
-- A second repo is registered and one agent runs against both. Registration
-  itself is no longer the obstacle — that shipped in Phase 2 — so what this
-  criterion now tests is the manifest half: one agent whose `repos` covers both
-  slugs, running successfully against each.
-- The "needs you" page aggregates every `awaiting_input` run plus the
-  decision-required reason codes from parked work.
+- The web tier no longer imports the Agent SDK, and `ANTHROPIC_API_KEY` is not
+  present in its environment.
+- A run survives a web-tier restart: reconnecting to the SSE endpoint replays
+  persisted events and then resumes live.
+- Two runs against the same repo execute concurrently in separate worktrees
+  without interfering.
+- `bus.ts` is replaced by a Postgres `LISTEN/NOTIFY` implementation and no other
+  file changes.
+- The JSON-as-TEXT columns become real `Json`, and the String status columns
+  become Postgres enums.
 
 ---
 
-## Phase 7: Findings become work
+---
 
-Today an agent's findings die in the transcript. `doc-drift` reports four stale
-claims and records `"findings": 4` in its outcome block — a **count**. The four
-findings themselves exist only as prose, so nothing downstream can address
-finding #3, and running the agent again tomorrow (its budget allows four runs a
-day) re-reports the same four with no way to tell them from new ones.
+## Phase 6: Registry and run trees
+
+Registry sync with `unregistered` / `orphaned` states and argument-drift
+warnings. Target repositories managed from the console rather than the
+environment. Subagent and harness child runs with cost roll-up. Register the
+first `harness` agent. Outcome parsing for JSONL streams, and the first
+outcome-mix chart.
+
+**Note:** repo management and the repo switcher were built early, during Phase 0,
+at the maintainer's request. The screens and the API exist and are listed as done
+below. What is _not_ done is the part that belongs to Phase 8: registering a repo
+is an unauthenticated action, so anyone reaching the port can point Arnold at any
+path on the host. Treat the remaining work as gating, not building.
+
+**Features**
+
+- [6.1 The registry lives in its own repository](features/6.1-registry-in-own-repository.md): Planned (#23, #16)
+
+**Acceptance criteria**
+
+- Adding a command to a target repo's `.claude/commands/` and hitting sync makes
+  it appear as `unregistered` with no console code change.
+- [x] A repo is registered, edited and retired from the console, with no edit to
+      `.env.local` and no re-run of `pnpm seed`. No repo is seeded at all:
+      `/repos` works on an empty database, and saving a repo syncs its agents.
+- [x] A candidate checkout is probed before it is accepted: a path that does not
+      exist or is not a git checkout is refused at registration time, with the
+      reason, rather than failing inside a workspace lease minutes into a run.
+- [x] A repo that any run references cannot be deleted, only archived. Archiving
+      keeps every run, artifact and outcome and removes the repo from the
+      switcher. See DECISIONS #16.
+- [x] The console is scoped to one repo, or to all of them, from a switcher in
+      the nav, and the choice survives navigating between Agents and Runs.
+- [ ] A repo registered in the console with no `registry/<slug>/` directory
+      reports why it has no agents, rather than rendering as an empty group.
+- Deleting a prompt file marks its agent `orphaned`, disables the Run button, and
+  preserves run history.
+- An `argument-hint` that stops matching the manifest's positional args raises a
+  drift warning.
+- A harness run renders as a parent with one child run per batch, and the
+  parent's cost equals the sum of its children.
+- Metrics JSONL lines become `RunOutcome` rows, and the outcome mix is charted
+  over time.
+- Reason-code vocabularies stay per agent. Two agents using different words for
+  the same idea must not be merged into one enum.
+
+---
+
+---
+
+## Phase 7: The rest of the findings chain
+
+Phase 1 turned findings into rows and filed them as issues. This phase builds the
+rest of the chain from there.
 
 The chain this phase builds: **finding → triage → scoper → order → queue →
 executor.** Note the order. The work order is the _validator's output_, not its
@@ -309,23 +349,10 @@ consumer role is vacant and its contract is already written.
 
 **Features**
 
-- [7.1 doc-drift emits structured findings](features/7.1-structured-findings.md): Done (#32)
-- [7.2 Finding rows with a fingerprint](features/7.2-finding-rows.md): Done (#33)
-- [7.3 Findings view: file a reviewed finding as an issue](features/7.3-findings-view.md): Done (#34)
-- [7.4 The rest of the chain: triage, scoper, order, queue, executor](features/7.4-findings-chain.md): Planned (#24)
+- [7.1 The rest of the chain: triage, scoper, order, queue, executor](features/7.1-findings-chain.md): Planned (#24)
 
 **Acceptance criteria**
 
-- A finding is a durable row, not a count: `Finding` carries repo, source run,
-  fingerprint, title, file, verdict and state. `Artifact.kind` already lists
-  `findings` and `artifactKindFor` never emits it — that is the hook.
-- **The fingerprint is not `file:line`.** Lines move; that is what drift _is_.
-  Two consecutive `doc-drift` runs over an unchanged repo produce zero new
-  findings. Without this the rest is worthless, so it is the first thing built.
-- A finding is closed automatically, by re-measurement. Each run is handed the
-  open findings and re-checks each; only a `fixed` re-check closes one. A finding
-  that a run simply does not mention stays open, because the agent is not
-  deterministic. A findings count that only ever rises is a lying count.
 - Triage is deterministic — no model. `doc-drift`'s existing `verdict` field is
   `agentFixable` under another name: only `document-stale` is auto-promotable,
   `repo-changed` means the code is wrong and is a human's ticket, `unclear` is
@@ -344,48 +371,78 @@ consumer role is vacant and its contract is already written.
   label, so the chain's first leg ends there: a reviewed finding is filed as a
   ledtraad issue by the operator, from the console. Filing writes to the
   tracker, not the repo, and only on a click. The executor leg waits for the
-  sandbox and Phase 4. ledtraad is not granted `draft-pr` to make a demo
+  Phase 2 sandbox and Phase 3. ledtraad is not granted `draft-pr` to make a demo
   complete.
-- **Revised 2026-10-01:** the first three criteria above (durable rows, the
-  fingerprint, auto-close) plus structured output from `doc-drift` and filing to
-  GitHub are features 7.1, 7.2 and 7.3, built first and done. The rest of the
-  chain is feature 7.4. Closing a finding is by re-measurement, not by omission
-  (see 7.2).
 
 ---
 
-## Phase 8: Vendor-agnostic harnesses
+## Phase 8: Auth
 
-Arnold owns the record and rents the loop (`docs/architecture.md` Section 0): it
-runs existing coding-agent harnesses (Claude Code, Codex, and later Gemini CLI
-and OpenCode) behind one adapter, instead of rebuilding tool calling, file
-editing and context management on a model API. A gateway in front of them holds
-cost, caps and provider keys. This phase settles whether vendor-agnosticism is
-real before anything is spent on team features.
+**Status: not started; built once someone other than the author uses the
+console.** Until then the console stays on localhost.
+
+Auth.js against any OIDC provider (optional in solo mode). Viewer, operator,
+admin. Write scope gates triggering. Audit trail on every run.
 
 **Features**
 
-- [8.1 Harness spike: doc-drift through Claude Code and Codex](features/8.1-harness-spike.md): Planned (#17)
-- [8.2 LLM gateway in front of both harnesses](features/8.2-llm-gateway.md): Planned (#19)
-- [8.3 Score runs against the planted-drift sandbox](features/8.3-score-runs.md): Planned (#18)
+- [8.1 Auth, once someone other than the author uses it](features/8.1-auth.md): Planned (#25)
 
 **Acceptance criteria**
 
-- `doc-drift` runs headless through Claude Code and through Codex, each via ACP
-  or its CLI JSON stream, and both event streams normalise into one `RunEvent`
-  shape that the console renders. A DECISIONS entry records which transport and
-  why.
-- A `Harness` interface (`start(spec, sandbox)` yielding normalised events,
-  `cancel()`, `capabilities`) with `claude-code` as one implementation; the raw
-  vendor payload is kept beside each normalised event.
-- The worker holds no provider API key: a gateway holds the keys, and a run holds
-  a virtual key capped to its budget. The ledger reads spend from the gateway.
-- Each harness adapter states what it loads from the host, so two operators get
-  the same agent.
-- A run can be scored against the sandbox's planted drifts, so a prompt change or
-  a second harness is compared by number.
+- Role floors hold: `read-only` viewer, `external-writes` admin, everything else
+  operator.
+- Registering an agent, raising its write scope, or granting `mainBookkeeping`
+  requires admin.
+- Registering, editing or removing a **repo** requires admin. This is the widest
+  unauthenticated capability Phase 0 has: a repo row names a filesystem path that
+  Arnold will clone and run agents against, so until this lands the console must
+  not be exposed beyond localhost.
+- Every run records who triggered it.
 
-**Depends on** feature 3.1 (the sandbox profile is what the harness runs inside).
+---
+
+## Phase 9: Scheduling and budget
+
+**Status: not scheduled.**
+
+Schedules share the enqueue path with the UI, so cron and a button are one route.
+Per-agent and per-repo caps with a ledger UI.
+
+**Acceptance criteria**
+
+- A scheduled run and a UI-triggered run differ only by the `trigger` column.
+- A run is refused before it starts when either the global or the per-agent daily
+  cap is already spent, and the refusal is visible as `budget_stopped`.
+- The ledger UI shows spend by day, by agent, and by repo against configured
+  caps.
+
+---
+
+---
+
+## Phase 10: Reach
+
+**Status: not scheduled.**
+
+The local-session runner, so agents needing a browser or another locally-bound
+resource can run from the console. A second repo onboarded to prove the
+multi-repo model. The "needs you" page as the primary landing view.
+
+**Acceptance criteria**
+
+- A local executor authenticates to the console, picks up jobs whose agent is
+  `needs-local-session`, executes them with the same `runAgent` code path, and
+  publishes events back. The enqueue contract does not change; only which
+  executor claims the job.
+- A second repo is registered and one agent runs against both. Registration
+  itself is no longer the obstacle — that shipped in Phase 6 — so what this
+  criterion now tests is the manifest half: one agent whose `repos` covers both
+  slugs, running successfully against each.
+- The "needs you" page aggregates every `awaiting_input` run plus the
+  decision-required reason codes from parked work.
+
+---
 
 ---
 

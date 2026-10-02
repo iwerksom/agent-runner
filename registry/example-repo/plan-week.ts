@@ -147,7 +147,7 @@ export const manifest: AgentManifest = {
 	budget: { dailyCostCapUsd: 8, maxTurns: 80, maxWallClockMinutes: 45 },
 
 	notes: [
-		"Run is disabled in the hosted console until --windows= or --hours= is supplied, because capacity source 0 needs the Chrome extension on your machine. The local-session runner (Phase 6) removes that limit.",
+		"Run is disabled in the hosted console until --windows= or --hours= is supplied, because capacity source 0 needs the Chrome extension on your machine. The local-session runner (Phase 10) removes that limit.",
 		"Spawns one work-order-scoper per SURVIVOR of its step-4 screen, not per candidate, so expect fewer child runs than candidates.",
 		"Never creates a branch and never opens a PR. Its only push is the .week-plan/ bookkeeping commit on main.",
 		"Hard-stops if no Atlassian tool is reachable rather than inventing a backlog from the repo.",

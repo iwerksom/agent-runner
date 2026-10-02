@@ -35,8 +35,8 @@ The five words are the five modules, not decoration:
 **The API enqueues, something else executes against a leased workspace, and runs
 are durable records with declared artifacts.**
 
-Phase 0 runs the executor in-process with SQLite and an EventEmitter. Phase 1
-swaps in a worker process, Postgres, and Redis. Nothing above changes, because
+Phase 0 runs the executor in-process with SQLite and an EventEmitter. Phase 5
+swaps in a worker process, Postgres, and a Postgres queue. Nothing above changes, because
 only the components behind that sentence get replaced.
 
 ## Getting started
@@ -84,7 +84,7 @@ is nullable and deleting a repo with history would silently detach it rather tha
 fail. See `docs/DECISIONS.md` #16.
 
 > Phase 0 has no auth, and registering a repo names a filesystem path Arnold will
-> clone and run agents against. Keep the console on localhost until Phase 3.
+> clone and run agents against. Keep the console on localhost until Phase 8.
 
 ### One env file, injected twice
 
@@ -179,7 +179,7 @@ every write scope the model supports:
 
 **All eight are registered, and only the read-only and `artifacts` tiers can be
 triggered.** The rest carry a `disabled` reason and are held in code until
-Phase 3 brings auth and per-tier credentials. There is still no auth, so anything
+Phase 2 brings per-tier credentials and Phase 8 brings auth. There is still no auth, so anything
 reaching the port can trigger the ones that are runnable. See
 [`docs/HANDOVER.md`](docs/HANDOVER.md).
 
@@ -229,7 +229,7 @@ and hoped for:
 ```
 arnold/
   packages/core/          types, store, and every runtime module
-    prisma/schema.prisma  SQLite in Phase 0, Postgres in Phase 1
+    prisma/schema.prisma  SQLite in Phase 0, Postgres in Phase 5
     src/agents.ts         the manifest contract; read this first
   registry/               manifest overlays, one directory per repo
     example-repo/

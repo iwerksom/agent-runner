@@ -8,7 +8,7 @@ agent completed six runs against a throwaway sandbox repo, the last on the tree
 as merged with PRs #6–#8, and with `ARNOLD_TRACE_PLUGIN_DIR` set each run also
 lands as an MLflow trace.
 Only the read-only and `artifacts` tiers have run; everything above them is held
-in code until Phase 3. Everything below is either verified, or honestly marked
+in code until Phase 2 (sandbox) or Phase 8 (auth). Everything below is either verified, or honestly marked
 as not.
 
 > **Correction, 2026-09-09.** Earlier versions of this file said Arnold "has
@@ -136,7 +136,7 @@ it from `/repos` with the local path of any small git repo of the same shape.
 
 ### Executing work orders: a temporary bridge
 
-Until `work-queue` runs on a repo (feature 4.1, #36), an accepted work
+Until `work-queue` runs on a repo (feature 3.1, #36), an accepted work
 order reaches code through GitHub and a Claude Code skill, outside Arnold:
 
 1. Run a `*-work-order-scoper` binding on an issue, e.g. `#41` on ledtraad.
@@ -177,18 +177,18 @@ figures undercount by roughly 3×. **The ledger is the source of truth for cost.
 
 ### Known broken or unfinished
 
-| Thing                                                    | Detail                                                                                                                                                                                                          |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No auth                                                  | Phase 3. Anyone reaching the port can trigger any agent — and now also register a repo, which names a host path Arnold will clone. Keep it on localhost.                                                        |
-| Mutating agents held, not gated                          | Every manifest above `artifacts` carries `disabled` with a reason and cannot be triggered (smoke [13]). The role checks and per-tier credentials that would release them are Phase 3.                           |
-| `awaiting_input` is terminal                             | An agent that stops to ask parks with the question preserved and no way to answer. Phase 4.                                                                                                                     |
-| No guarded-push helper                                   | Two manifests declare `mainBookkeeping`; the helper that validates the staged diff against declared globs is not written.                                                                                       |
-| `pre-pr-review` has no structured outcome                | It prints a summary and writes no file, so its runs show a transcript and a cost but nothing chartable.                                                                                                         |
-| Reads are not confined                                   | The gate governs writes only. A read-only agent may `Read`, `Grep`, `cat` or `wc` any file the console user can read, `.env.local` included; the safe-filter exemption also applies after `;`, not only after ` | `. Gate now or sandbox later is a design call (#27). |
-| User-level skills load into runs                         | `settingSources: ["project"]` does not keep `~/.claude` skills out: they appear in the SDK init event's slash commands.                                                                                         |
-| `Agent.id` is global                                     | One prompt bound to two repos needs two ids (`doc-drift`, `sandbox-doc-drift`); a shared id would overwrite the other repo's row on sync.                                                                       |
-| Five runs detached from their repo                       | `repoId` is null on every historical run because the old repo row was deleted. Not recoverable; DECISIONS #16 stops it recurring.                                                                               |
-| The reference registry points at a repo you may not have | `registry/example-repo/` describes agents from one specific project. Keep them as worked examples; add your own directory.                                                                                      |
+| Thing                                                    | Detail                                                                                                                                                                                                                  |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No auth                                                  | Phase 8. Anyone reaching the port can trigger any agent — and now also register a repo, which names a host path Arnold will clone. Keep it on localhost.                                                                |
+| Mutating agents held, not gated                          | Every manifest above `artifacts` carries `disabled` with a reason and cannot be triggered (smoke [13]). The role checks and per-tier credentials that would release them are Phase 2 (credentials) and Phase 8 (roles). |
+| `awaiting_input` is terminal                             | An agent that stops to ask parks with the question preserved and no way to answer. Phase 3.                                                                                                                             |
+| No guarded-push helper                                   | Two manifests declare `mainBookkeeping`; the helper that validates the staged diff against declared globs is not written.                                                                                               |
+| `pre-pr-review` has no structured outcome                | It prints a summary and writes no file, so its runs show a transcript and a cost but nothing chartable.                                                                                                                 |
+| Reads are not confined                                   | The gate governs writes only. A read-only agent may `Read`, `Grep`, `cat` or `wc` any file the console user can read, `.env.local` included; the safe-filter exemption also applies after `;`, not only after `         | `. Gate now or sandbox later is a design call (#27). |
+| User-level skills load into runs                         | `settingSources: ["project"]` does not keep `~/.claude` skills out: they appear in the SDK init event's slash commands.                                                                                                 |
+| `Agent.id` is global                                     | One prompt bound to two repos needs two ids (`doc-drift`, `sandbox-doc-drift`); a shared id would overwrite the other repo's row on sync.                                                                               |
+| Five runs detached from their repo                       | `repoId` is null on every historical run because the old repo row was deleted. Not recoverable; DECISIONS #16 stops it recurring.                                                                                       |
+| The reference registry points at a repo you may not have | `registry/example-repo/` describes agents from one specific project. Keep them as worked examples; add your own directory.                                                                                              |
 
 ---
 

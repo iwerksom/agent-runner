@@ -39,7 +39,7 @@ natively (`--acp`); Claude Code and Codex speak it through the
 `claude-agent-acp` and `codex-acp` adapters. It was built for editors; Arnold is
 one more client. Its permission-request flow is the vendor-neutral counterpart
 of the SDK's `canUseTool`. Whether it holds up headless in a worker is
-settled by ROADMAP feature 8.1. Where it does not, the fallback is each CLI's own
+settled by ROADMAP feature 4.1. Where it does not, the fallback is each CLI's own
 JSON event stream behind the same adapter interface.
 
 So Arnold owns what gets run, where, by whom, and what came of it:

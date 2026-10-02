@@ -1,5 +1,5 @@
 /**
- * Purpose: TEMPORARY bridge, until ROADMAP Phase 4 (Section 0 step 3, #36).
+ * Purpose: TEMPORARY bridge, until ROADMAP Phase 3 (feature 3.1, #36).
  * Publishes an accepted work order from a scoper run as a comment on the
  * target repo's GitHub issue, labelled `wo:proposed`.
  *

@@ -220,7 +220,7 @@ export async function runAgent(runId: string): Promise<void> {
 			// "project" is kept because CLAUDE.md rides on the same switch, and an
 			// agent that cannot read the repo's conventions gives worse answers.
 			// That still loads .claude/settings.json, whose hooks run outside the
-			// tool-permission path entirely — narrow this to [] once Phase 3 mounts
+			// tool-permission path entirely — narrow this to [] once Phase 2 mounts
 			// credentials per tier and the conventions can be injected another way.
 			settingSources: ["project"],
 			// Deliberately empty. The SDK approves anything matching `allowedTools`

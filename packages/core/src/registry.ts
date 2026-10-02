@@ -44,7 +44,7 @@ export type AgentWithManifest = {
 };
 
 /**
- * Manifests that apply to `repoSlug`. Async so the signature survives Phase 1,
+ * Manifests that apply to `repoSlug`. Async so the signature survives Phase 5,
  * where the registry may be fetched rather than bundled.
  */
 export async function loadManifests(repoSlug: string): Promise<AgentManifest[]> {

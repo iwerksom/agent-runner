@@ -61,7 +61,7 @@ export function workspaceRoot(): string {
 	);
 }
 
-/** Where collected artifacts are stored. Phase 1 replaces this with an object store. */
+/** Where collected artifacts are stored. Phase 5 replaces this with an object store. */
 export function artifactRoot(): string {
 	return resolveFromRepoRoot(process.env.ARNOLD_ARTIFACT_ROOT, ".arnold/artifacts");
 }

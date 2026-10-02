@@ -15,7 +15,7 @@
  *     trusted as prose. `git push --force`, `gh pr merge` and `gh pr ready` are
  *     absent on purpose, not by oversight.
  *
- * WARNING for the phase this is registered in: role gating is Phase 3 and does
+ * WARNING for the phase this is registered in: role gating is Phase 8 and does
  * not exist yet. Anyone who can reach the console can start this, and it pushes
  * branches and opens PRs against the real remote.
  */
@@ -44,13 +44,13 @@ export const manifest: AgentManifest = {
 	},
 	invocable: "direct",
 
-	// Phase 4 registers the mutating agents; Phase 3 is what makes them safe to
+	// Phase 3 registers the mutating agents; Phase 2 is what makes them safe to
 	// press. This one branches, commits, pushes and opens a draft PR, and it also
 	// holds mainBookkeeping. The leased worktree carries the target repo's own
 	// .claude/settings.local.json, which pre-approves `git push` and `gh pr`
 	// outright, so nothing but this hold stands between the button and a push.
 	disabled: {
-		reason: "Held until Phase 3: it pushes branches and opens PRs, and the console has no auth or per-tier credentials yet.",
+		reason: "Held until the Phase 2 sandbox or Phase 8 auth: it pushes branches and opens PRs, and the console has no auth or per-tier credentials yet.",
 	},
 
 	args: [
@@ -137,7 +137,7 @@ export const manifest: AgentManifest = {
 	budget: { dailyCostCapUsd: 15, maxTurns: 200, maxWallClockMinutes: 150 },
 
 	notes: [
-		"Registered before Phase 3, so nothing gates who can start it. It pushes branches and opens draft PRs against the real remote.",
+		"Registered before role gating (Phase 8), so nothing gates who can start it. It pushes branches and opens draft PRs against the real remote.",
 		"Never force-pushes, never changes a PR base, never marks ready for review, never merges, never runs /fix-pr-comments. Those commands are absent from the allow-list, not merely discouraged.",
 		"Needs mainBookkeeping for its .week-plan/ commits; the guarded-push helper must validate the staged diff against those globs before the push is allowed.",
 		"Turns ambiguity into a park, never a question: it is written for the case where nobody is watching.",

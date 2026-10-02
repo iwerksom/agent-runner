@@ -7,6 +7,10 @@ an accident.
 
 Ordered roughly by how expensive it would be to get wrong.
 
+Phase numbers in entries 1 to 26 are the numbering that was current when they
+were written. The roadmap was renumbered in build order on 2026-10-02; the table
+in entry 27 translates.
+
 ---
 
 ## 1. Prompts stay in the target repo
@@ -596,3 +600,37 @@ The order of work is now: useful on ledtraad, sandbox, mutating agents (Phase 4)
 harness spike, gateway, Postgres queue, registry split, the rest of findings,
 auth. Nothing was dropped; the vendor-agnostic steps run after the sandbox
 instead of before the first useful day.
+
+## 27. Phases are numbered in build order, and a replan renumbers them
+
+The roadmap used to number phases by what they are (Phase 3: Auth and write-scope
+gating) and then kept a separate "build order" list to say which came first. That
+needed two indexes to answer "how far along is Arnold?", and no phase number said
+whether it was done or next. Jonas asked for one index: phase numbers are the
+build order, so Phase 1 is built first, and when priorities change (as they did
+on 2026-10-01 when "useful on ledtraad" jumped the queue) the phases are
+renumbered. That is ordinary replanning, and it costs one decision entry.
+
+**Rejected:** keeping the old numbers stable and adding the sequence on the side.
+It spared edits to issue titles and code comments, which is a convenience for the
+editor, not for the reader.
+
+Renumbered 2026-10-02. Features follow their phase (`<phase>.<n>`).
+
+| Old phase                                            | New phase | Notes                                                              |
+| ---------------------------------------------------- | --------- | ------------------------------------------------------------------ |
+| 0                                                    | 0         | POC, unchanged                                                     |
+| 7 (first three features), 4 (work orders reach code) | 1         | Useful on ledtraad; built 2026-10-01 and 2026-10-02                |
+| 3 (sandbox, gate)                                    | 2         | Sandbox and a hardened gate                                        |
+| 4                                                    | 3         | Mutating agents                                                    |
+| 8                                                    | 4         | Vendor-agnostic harnesses (harness spike, gateway, scoring, spend) |
+| 1                                                    | 5         | Real infrastructure (Postgres queue, worker)                       |
+| 2                                                    | 6         | Registry and run trees (registry repository)                       |
+| 7 (rest)                                             | 7         | The rest of the findings chain                                     |
+| 3 (auth)                                             | 8         | Auth                                                               |
+| 5                                                    | 9         | Scheduling and budget (not scheduled)                              |
+| 6                                                    | 10        | Reach (not scheduled)                                              |
+
+Old Phase 8 was added on 2026-10-02 for the harness spike and gateway, which
+until then lived only in `docs/architecture.md` Section 0. Old Phases 3 and 7
+split because their features were built at different times.

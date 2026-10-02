@@ -1,7 +1,7 @@
 /**
  * Purpose: in-process fan-out from the Runner to any SSE stream watching a run.
  *
- * Phase 1 replaces this file with Redis pub/sub and nothing else changes, so the
+ * Phase 5 replaces this file with Postgres LISTEN/NOTIFY and nothing else changes, so the
  * surface is deliberately three functions and one message union. Do not add
  * request/response, replay, or filtering here: replay comes from the RunEvent
  * table, which is the durable record. The bus is a live tap, and a dropped

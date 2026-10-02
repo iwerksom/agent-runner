@@ -1,5 +1,9 @@
 # Jira: Arnold epic and phase stories
 
+> **Historical.** Written against the original phase numbering (Phases 1 to 6),
+> before the roadmap was renumbered in build order (DECISIONS #27). The roadmap,
+> `docs/ROADMAP.md`, is the source of truth; do not plan from this file.
+
 Arnold's Jira work item, ready to create in project **DAP**.
 
 Neither this cloud session nor the desktop bridge can reach

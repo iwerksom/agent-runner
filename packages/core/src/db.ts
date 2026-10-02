@@ -4,7 +4,7 @@
  * Next's dev server re-evaluates modules on every hot reload. A module-scoped
  * `new PrismaClient()` would therefore open a new SQLite connection pool per
  * edit until the file handles run out, so the instance is parked on a global and
- * reused. Phase 1 keeps this file and only changes the datasource.
+ * reused. Phase 5 keeps this file and only changes the datasource.
  */
 
 import { PrismaClient } from "@prisma/client";
