@@ -31,6 +31,7 @@ import {
 	artifactDirOf,
 	dockerArgs,
 	profileFor,
+	pushTargetOf,
 	resolveClaudeExecutable,
 	sandboxEnv,
 } from "../packages/core/src/sandbox.js";
@@ -906,14 +907,107 @@ console.log("\n[20] sandbox profiles: what a container can see and keep (feature
 		artifacts.mounts.filter((m) => m.writable).length === 1 &&
 			artifacts.mounts.filter((m) => m.writable)[0]?.host.endsWith("/out") === true,
 	);
-	for (const scope of ["working-tree", "branch-push", "draft-pr", "external-writes"] as const) {
+	{
 		let refused = false;
 		try {
-			profileFor({ ...base, manifest: { ...scoper, writeScope: scope } });
+			profileFor({ ...base, manifest: { ...scoper, writeScope: "external-writes" } });
 		} catch {
 			refused = true;
 		}
-		check(`no profile yet for ${scope}, so it cannot run sandboxed`, refused);
+		check("no profile yet for external-writes, so it cannot run sandboxed", refused);
+	}
+	{
+		// working-tree needs a real worktree pointer to find its git admin directory.
+		const tree = await mkdtemp(path.join(os.tmpdir(), "arnold-smoke-wt-"));
+		await writeFile(path.join(tree, ".git"), "gitdir: /w/mirror.git/worktrees/run-1\n");
+		const wt = profileFor({
+			...base,
+			workspacePath: tree,
+			manifest: { ...scoper, writeScope: "working-tree", artifactGlobs: [] },
+		});
+		const writable = wt.mounts.filter((m) => m.writable).map((m) => m.host);
+		check(
+			"working-tree: the worktree and its own git admin directory are writable",
+			writable.length === 2 &&
+				writable.includes(tree) &&
+				writable.includes("/w/mirror.git/worktrees/run-1"),
+			`got ${JSON.stringify(writable)}`,
+		);
+		check(
+			"working-tree: the mirror itself stays read-only, so commits cannot land",
+			wt.mounts.some((m) => m.host === "/w/mirror.git" && !m.writable),
+		);
+		check(
+			"working-tree: no push token and no remote config",
+			wt.envSet.GH_TOKEN === undefined && wt.envSet.GIT_CONFIG_COUNT === undefined,
+		);
+		check("working-tree: commits have an identity", wt.envSet.GIT_AUTHOR_NAME === "Arnold");
+		await rm(tree, { recursive: true, force: true });
+
+		const remoteCases: [string, string | undefined][] = [
+			["git@github.com:iwerksom/ledtraad.git", "https://github.com/iwerksom/ledtraad.git"],
+			["https://github.com/iwerksom/ledtraad", "https://github.com/iwerksom/ledtraad.git"],
+			["file:///srv/remote.git", undefined],
+			["/srv/remote.git", undefined],
+			["git@example.com:team/repo.git", "unsupported"],
+		];
+		for (const [remote, expectedUrl] of remoteCases) {
+			const target = pushTargetOf(remote);
+			const ok =
+				expectedUrl === "unsupported"
+					? target === undefined
+					: expectedUrl === undefined
+						? target?.kind === "path" && target.path === "/srv/remote.git"
+						: target?.kind === "https" && target.url === expectedUrl;
+			check(`push target of ${remote}`, ok, `got ${JSON.stringify(target)}`);
+		}
+		let noToken = "";
+		const saved = {
+			a: process.env.ARNOLD_GH_PUSH_TOKEN,
+			b: process.env.ARNOLD_GH_PUSH_TOKEN_LEDTRAAD,
+		};
+		delete process.env.ARNOLD_GH_PUSH_TOKEN;
+		delete process.env.ARNOLD_GH_PUSH_TOKEN_LEDTRAAD;
+		try {
+			profileFor({
+				...base,
+				repoSlug: "ledtraad",
+				remoteUrl: "git@github.com:iwerksom/ledtraad.git",
+				manifest: { ...scoper, writeScope: "draft-pr" },
+			});
+		} catch (caught) {
+			noToken = String(caught);
+		}
+		check(
+			"draft-pr to GitHub without a push token is refused, naming the variable",
+			noToken.includes("ARNOLD_GH_PUSH_TOKEN_LEDTRAAD"),
+			noToken.slice(0, 160),
+		);
+		process.env.ARNOLD_GH_PUSH_TOKEN_LEDTRAAD = "tok";
+		const dp = profileFor({
+			...base,
+			repoSlug: "ledtraad",
+			remoteUrl: "git@github.com:iwerksom/ledtraad.git",
+			manifest: { ...scoper, writeScope: "draft-pr" },
+		});
+		check("draft-pr: the token is set for this tier", dp.envSet.GH_TOKEN === "tok");
+		check(
+			"draft-pr: pushes go to the real remote over https, not the mirror's local origin",
+			dp.envSet.GIT_CONFIG_VALUE_0 === "https://github.com/iwerksom/ledtraad.git",
+		);
+		check(
+			"draft-pr: the mirror is writable",
+			dp.mounts.some((m) => m.host === "/w/mirror.git" && m.writable),
+		);
+		const ro = profileFor({
+			...base,
+			manifest: { ...scoper, writeScope: "read-only", artifactGlobs: [] },
+		});
+		check("read-only still gets no push token", ro.envSet.GH_TOKEN === undefined);
+		if (saved.a === undefined) delete process.env.ARNOLD_GH_PUSH_TOKEN;
+		else process.env.ARNOLD_GH_PUSH_TOKEN = saved.a;
+		if (saved.b === undefined) delete process.env.ARNOLD_GH_PUSH_TOKEN_LEDTRAAD;
+		else process.env.ARNOLD_GH_PUSH_TOKEN_LEDTRAAD = saved.b;
 	}
 
 	const env = sandboxEnv(readOnly, {
@@ -1007,8 +1101,10 @@ console.log(
 			);
 			const uid = process.getuid?.() ?? 1000;
 			const gid = process.getgid?.() ?? 1000;
+			// A subshell, so a redirection inside the command cannot swallow the
+			// probe's own.
 			const probe = (name: string, command: string) =>
-				`${command} >/dev/null 2>&1 && echo "${name}=yes" || echo "${name}=no"`;
+				`( ${command} ) >/dev/null 2>&1 && echo "${name}=yes" || echo "${name}=no"`;
 			const script = [
 				probe("read-canary", `cat ${canary}/secret.txt`),
 				probe("list-canary", `ls -A ${canary}`),
@@ -1081,6 +1177,164 @@ console.log(
 				seen.get("secret-vars") === "0",
 			);
 			check("the model key is in the environment", seen.get("model-key") === "1");
+		} finally {
+			await rm(scratch, { recursive: true, force: true });
+		}
+	}
+}
+
+console.log("\n[22] inside the sandbox: what git can write depends on the tier (feature 2.1)");
+{
+	const image = spawnSync("docker", ["image", "inspect", "arnold-sandbox:dev"], {
+		stdio: "ignore",
+	});
+	if (image.status !== 0) {
+		console.log(
+			"  SKIP  docker or the arnold-sandbox:dev image is not available (run: pnpm sandbox:build)",
+		);
+	} else {
+		const here = process.cwd();
+		const scratch = await mkdtemp(path.join(here, ".arnold-smoke-git-"));
+		const git = (cwd: string, ...args: string[]) =>
+			spawnSync("git", args, {
+				cwd,
+				encoding: "utf8",
+				env: {
+					...process.env,
+					GIT_AUTHOR_NAME: "t",
+					GIT_AUTHOR_EMAIL: "t@t",
+					GIT_COMMITTER_NAME: "t",
+					GIT_COMMITTER_EMAIL: "t@t",
+				},
+			});
+		try {
+			const remote = path.join(scratch, "remote.git");
+			const seed = path.join(scratch, "seed");
+			const mirror = path.join(scratch, "mirror.git");
+			const tree = path.join(scratch, "tree");
+			git(scratch, "init", "--bare", "-b", "main", remote);
+			git(scratch, "clone", "-q", remote, seed);
+			await writeFile(path.join(seed, "README.md"), "hello\n");
+			git(seed, "add", "-A");
+			git(seed, "commit", "-q", "-m", "seed");
+			git(seed, "push", "-q", "origin", "HEAD:main");
+			// `--bare`, as workspace.ts creates real mirrors: `--mirror` would add
+			// remote.origin.mirror, which refuses a push with a refspec.
+			git(scratch, "clone", "-q", "--bare", remote, mirror);
+			const added = git(mirror, "worktree", "add", "-q", "--detach", tree, "main");
+			check("the test repositories were created", added.status === 0, added.stderr);
+
+			const claudeExecutable = resolveClaudeExecutable();
+			const uid = process.getuid?.() ?? 1000;
+			const gid = process.getgid?.() ?? 1000;
+			const inContainer = async (
+				writeScope: "working-tree" | "branch-push",
+				script: string,
+			) => {
+				const profile = profileFor({
+					manifest: { ...scoper, writeScope, artifactGlobs: [] },
+					workspacePath: tree,
+					mirrorPath: mirror,
+					claudeExecutable,
+					repoSlug: "smoke",
+					remoteUrl: remote,
+				});
+				const envFile = path.join(scratch, `env-${writeScope}`);
+				const env = sandboxEnv(profile, { ANTHROPIC_API_KEY: "k" });
+				await writeFile(
+					envFile,
+					Object.entries(env)
+						.map(([k, v]) => `${k}=${v}`)
+						.join("\n") + "\n",
+				);
+				const run = spawnSync(
+					"docker",
+					dockerArgs({
+						name: `arnold-smoke-git-${process.pid}-${writeScope}`,
+						profile,
+						cwd: tree,
+						envFile,
+						command: "sh",
+						args: ["-c", script],
+						uid,
+						gid,
+					}),
+					{ encoding: "utf8" },
+				);
+				const seen = new Map<string, string>();
+				for (const line of run.stdout.split("\n")) {
+					const [k, v] = line.split("=");
+					if (k !== undefined && v !== undefined) seen.set(k, v);
+				}
+				return { seen, stderr: run.stderr };
+			};
+			// A subshell, so a redirection inside the command cannot swallow the
+			// probe's own.
+			const probe = (name: string, command: string) =>
+				`( ${command} ) >/dev/null 2>&1 && echo "${name}=yes" || echo "${name}=no"`;
+
+			// working-tree: files and the index, but nothing that lands in the mirror.
+			const wt = await inContainer(
+				"working-tree",
+				[
+					probe("edit", "echo change >> README.md"),
+					probe("status", "git status --short"),
+					probe("log", "git log --oneline"),
+					probe("add", "git add README.md"),
+					probe("commit", "git commit -q -m x"),
+					probe("branch", "git checkout -q -b feat"),
+					probe("write-etc", "touch /etc/x"),
+				].join("; "),
+			);
+			check("working-tree: the container ran", wt.seen.size >= 6, wt.stderr.slice(0, 200));
+			check(
+				"working-tree: edit, status and log work",
+				["edit", "status", "log"].every((k) => wt.seen.get(k) === "yes"),
+			);
+			check(
+				"working-tree: staging cannot write objects (git add fails)",
+				wt.seen.get("add") === "no",
+			);
+			check(
+				"working-tree: a commit cannot land (mirror is read-only)",
+				wt.seen.get("commit") === "no",
+			);
+			check("working-tree: a branch cannot be created", wt.seen.get("branch") === "no");
+			check(
+				"working-tree: the root file system is still read-only",
+				wt.seen.get("write-etc") === "no",
+			);
+			check(
+				"working-tree: the edit really reached the worktree on the host",
+				(await readFile(path.join(tree, "README.md"), "utf8")).includes("change"),
+			);
+			git(tree, "checkout", "-q", "--", ".");
+			git(tree, "reset", "-q");
+
+			// branch-push: commit on a branch and push it to the remote.
+			const bp = await inContainer(
+				"branch-push",
+				[
+					probe("branch", "git checkout -q -b feat/x"),
+					probe("edit", "echo change >> README.md"),
+					probe("commit", "git commit -q -am x"),
+					probe("push", "git push -q origin HEAD:refs/heads/arnold-smoke"),
+					probe("write-etc", "touch /etc/x"),
+				].join("; "),
+			);
+			check(
+				"branch-push: branch, commit and push all work",
+				["branch", "edit", "commit", "push"].every((k) => bp.seen.get(k) === "yes"),
+				`${JSON.stringify([...bp.seen])} ${bp.stderr.slice(0, 200)}`,
+			);
+			check(
+				"branch-push: the branch reached the remote",
+				git(remote, "rev-parse", "--verify", "-q", "refs/heads/arnold-smoke").status === 0,
+			);
+			check(
+				"branch-push: the root file system is still read-only",
+				bp.seen.get("write-etc") === "no",
+			);
 		} finally {
 			await rm(scratch, { recursive: true, force: true });
 		}

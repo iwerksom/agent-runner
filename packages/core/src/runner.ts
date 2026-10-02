@@ -269,6 +269,8 @@ export async function runAgent(runId: string): Promise<void> {
 					workspacePath: lease.workspacePath,
 					mirrorPath: mirrorPathFor(run.repo.slug),
 					claudeExecutable,
+					repoSlug: run.repo.slug,
+					remoteUrl: run.repo.remoteUrl,
 				}),
 				runId,
 			);
