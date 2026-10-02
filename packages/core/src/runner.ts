@@ -16,6 +16,7 @@ import { isTerminalStatus, type AgentManifest } from "./agents.js";
 import { publishRunEvent, publishRunStatus } from "./bus.js";
 import { collectArtifacts, parseOutcome, snapshotArtifacts } from "./collect.js";
 import { knownFindingsContext, recordFindings } from "./findings.js";
+import { dockerSpawner, profileFor, resolveClaudeExecutable, sandboxEnabled } from "./sandbox.js";
 import { prisma } from "./db.js";
 import { errorMessageOf, NotFoundError, ValidationError } from "./errors.js";
 import { parseJsonColumn, stringifyJsonColumn } from "./json.js";
@@ -31,7 +32,12 @@ import {
 	runEventTypeFor,
 } from "./sdkAdapter.js";
 import { buildCanUseTool, intersectToolPatterns } from "./writeScope.js";
-import { leaseWorkspace, readBookkeepingPaths, releaseWorkspace } from "./workspace.js";
+import {
+	leaseWorkspace,
+	mirrorPathFor,
+	readBookkeepingPaths,
+	releaseWorkspace,
+} from "./workspace.js";
 
 /** In-flight runs, so `cancelRun` can reach a loop it did not start. */
 const ARNOLD_INFLIGHT_KEY = "__arnoldInflightRuns__";
@@ -250,6 +256,24 @@ export async function runAgent(runId: string): Promise<void> {
 				? { plugins: [{ type: "local", path: process.env.ARNOLD_TRACE_PLUGIN_DIR }] }
 				: {}),
 		};
+
+		// Opt-in while the sandbox is a spike (ARNOLD_SANDBOX=docker): the whole
+		// `claude` process runs in a container shaped by the manifest's write scope.
+		// A scope without a profile throws here, before anything runs.
+		if (sandboxEnabled()) {
+			const claudeExecutable =
+				options.pathToClaudeCodeExecutable ?? resolveClaudeExecutable();
+			options.spawnClaudeCodeProcess = dockerSpawner(
+				profileFor({
+					manifest: fullManifest,
+					workspacePath: lease.workspacePath,
+					mirrorPath: mirrorPathFor(run.repo.slug),
+					claudeExecutable,
+				}),
+				runId,
+			);
+			options.pathToClaudeCodeExecutable = claudeExecutable;
+		}
 
 		let assistantText = "";
 		let finalMessageText = "";

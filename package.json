@@ -22,7 +22,8 @@
 		"orders:publish": "node scripts/with-env.mjs --require=DATABASE_URL tsx scripts/publish-order.ts",
 		"typecheck:offline": "node scripts/make-prisma-typestub.mjs && tsc -p tsconfig.verify.json --noEmit",
 		"format": "prettier --write .",
-		"format:check": "prettier --check ."
+		"format:check": "prettier --check .",
+		"sandbox:build": "docker build -t arnold-sandbox:dev sandbox/"
 	},
 	"dependencies": {
 		"@arnold/core": "workspace:*"

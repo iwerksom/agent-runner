@@ -15,15 +15,16 @@ With `ARNOLD_TRACE_PLUGIN_DIR` set each run also lands as an MLflow trace.
 
 Real runs, by date. Costs are from the ledger, which is the source of truth.
 
-| Date              | Repo                   | Agent                                                | Runs | Cost       | Notes                                                                   |
-| ----------------- | ---------------------- | ---------------------------------------------------- | ---- | ---------- | ----------------------------------------------------------------------- |
-| 2026-08-13 and 14 | (a repo since deleted) | `work-order-scoper`, `pr-loop-analyzer`, `plan-week` | 5    | $0.47–0.74 | First runs; their repo was deleted, so `repoId` is null (DECISIONS #16) |
-| 2026-09-12        | `ledtraad`             | `docid-invariant`                                    | 1    | $0.93      | First run after the placeholder fix                                     |
-| 2026-09-12        | `ledtraad`             | `doc-drift`                                          | 2    | $1.59–1.78 | 34 and 39 turns; sized the agent's budget                               |
-| 2026-10-01        | `sandbox`              | `sandbox-doc-drift`                                  | 8    | $0.07–0.32 | One failed; the rest found all three planted drifts                     |
-| 2026-10-01        | `ledtraad`             | `doc-drift`                                          | 4    | $1.91–2.77 | 33 to 66 turns; the runs that shaped the findings design (Phase 1)      |
-| 2026-10-01        | `ledtraad`             | `ledtraad-work-order-scoper`                         | 2    | $0.00–2.01 | One failed at the turn limit, which exposed the failed-spend bug (#38)  |
-| 2026-10-02        | `ledtraad`             | `doc-drift`                                          | 3    | $1.15–2.69 | Checked finding rows end to end; one died at the 45-turn cap            |
+| Date              | Repo                   | Agent                                                | Runs | Cost       | Notes                                                                        |
+| ----------------- | ---------------------- | ---------------------------------------------------- | ---- | ---------- | ---------------------------------------------------------------------------- |
+| 2026-08-13 and 14 | (a repo since deleted) | `work-order-scoper`, `pr-loop-analyzer`, `plan-week` | 5    | $0.47–0.74 | First runs; their repo was deleted, so `repoId` is null (DECISIONS #16)      |
+| 2026-09-12        | `ledtraad`             | `docid-invariant`                                    | 1    | $0.93      | First run after the placeholder fix                                          |
+| 2026-09-12        | `ledtraad`             | `doc-drift`                                          | 2    | $1.59–1.78 | 34 and 39 turns; sized the agent's budget                                    |
+| 2026-10-01        | `sandbox`              | `sandbox-doc-drift`                                  | 8    | $0.07–0.32 | One failed; the rest found all three planted drifts                          |
+| 2026-10-01        | `ledtraad`             | `doc-drift`                                          | 4    | $1.91–2.77 | 33 to 66 turns; the runs that shaped the findings design (Phase 1)           |
+| 2026-10-01        | `ledtraad`             | `ledtraad-work-order-scoper`                         | 2    | $0.00–2.01 | One failed at the turn limit, which exposed the failed-spend bug (#38)       |
+| 2026-10-02        | `sandbox`              | `sandbox-doc-drift`, `sandbox-readme-report`         | 3    | $0.07–0.25 | First runs inside the Docker sandbox (feature 2.1); one cancelled on purpose |
+| 2026-10-02        | `ledtraad`             | `doc-drift`                                          | 3    | $1.15–2.69 | Checked finding rows end to end; one died at the 45-turn cap                 |
 
 `sandbox` is a throwaway local repo (`registry/sandbox/`) whose README carries
 three deliberate drifts, so a run is either right or wrong. It is the cheapest
@@ -150,3 +151,21 @@ browser-driven UI verification; it is bad at "run it and read the console".
 **For UI bugs, measure before theorising.** Build a fixture-data preview route,
 drive it with Playwright, and check element geometry and network calls. See
 DECISIONS #15 for why this is written down.
+
+---
+
+## Running agents in the Docker sandbox (opt-in)
+
+Feature 2.1. Off unless `ARNOLD_SANDBOX=docker` is set, and only `read-only` and
+`artifacts` agents have a profile; any other scope refuses to start sandboxed.
+
+1. Docker must work for your user (`docker run --rm hello-world`). In WSL, join the
+   `docker` group and open a fresh session.
+2. Build the image: `pnpm sandbox:build`.
+3. Start the console with the variable set: `ARNOLD_SANDBOX=docker pnpm dev`.
+
+Each run then executes the whole `claude` process in a container named
+`arnold-<runId>`: worktree and mirror read-only, an empty `HOME`, no credentials
+except the model key, read-only root filesystem, no capabilities. `docker ps`
+shows it while it runs. A read-only forge token for agents that use `gh` goes in
+`ARNOLD_GH_READ_TOKEN`.

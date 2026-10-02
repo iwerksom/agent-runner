@@ -12,7 +12,9 @@
  * Exits non-zero if any assertion failed.
  */
 
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -25,6 +27,13 @@ import { extractRunTicketKeys, extractTicketKeys } from "../packages/core/src/no
 import { preflightPromptValues, renderPrompt, validateArgs } from "../packages/core/src/prompt.js";
 import { gateAsPreToolUseHook } from "../packages/core/src/sdkAdapter.js";
 import { buildCanUseTool } from "../packages/core/src/writeScope.js";
+import {
+	artifactDirOf,
+	dockerArgs,
+	profileFor,
+	resolveClaudeExecutable,
+	sandboxEnv,
+} from "../packages/core/src/sandbox.js";
 import { registryManifestsBySlug } from "../registry/index.js";
 import { manifest as aiSmellScan } from "../registry/example-repo/ai-smell-scan.js";
 import { manifest as fixPrComments } from "../registry/example-repo/fix-pr-comments.js";
@@ -848,6 +857,233 @@ console.log(
 	} finally {
 		await rm(work, { recursive: true, force: true });
 		await rm(outside, { recursive: true, force: true });
+	}
+}
+
+console.log("\n[20] sandbox profiles: what a container can see and keep (feature 2.1)");
+{
+	check(
+		"a glob names its directory",
+		artifactDirOf(".pr-loop/reports/PR-*-*.md") === ".pr-loop/reports",
+	);
+	check("a ** glob names its directory", artifactDirOf("out/**") === "out");
+	for (const bad of ["report.md", "*.md", "../x/*.md", "/abs/*.md"]) {
+		let refused = false;
+		try {
+			artifactDirOf(bad);
+		} catch {
+			refused = true;
+		}
+		check(`a glob that cannot be narrowed is refused: ${bad}`, refused);
+	}
+
+	const base = {
+		workspacePath: "/w/tree",
+		mirrorPath: "/w/mirror.git",
+		claudeExecutable: "/sdk/claude",
+	};
+	const readOnly = profileFor({
+		...base,
+		manifest: { ...scoper, writeScope: "read-only", artifactGlobs: [] },
+	});
+	check(
+		"read-only mounts nothing writable",
+		readOnly.mounts.every((m) => !m.writable),
+	);
+	check(
+		"read-only mounts the worktree, the mirror and the claude binary directory",
+		["/w/tree", "/w/mirror.git", "/sdk"].every((p) =>
+			readOnly.mounts.some((m) => m.host === p),
+		),
+	);
+	const artifacts = profileFor({
+		...base,
+		workspacePath: await mkdtemp(path.join(os.tmpdir(), "arnold-smoke-prof-")),
+		manifest: { ...scoper, writeScope: "artifacts", artifactGlobs: ["out/report-*.md"] },
+	});
+	check(
+		"artifacts mounts only the glob's directory writable",
+		artifacts.mounts.filter((m) => m.writable).length === 1 &&
+			artifacts.mounts.filter((m) => m.writable)[0]?.host.endsWith("/out") === true,
+	);
+	for (const scope of ["working-tree", "branch-push", "draft-pr", "external-writes"] as const) {
+		let refused = false;
+		try {
+			profileFor({ ...base, manifest: { ...scoper, writeScope: scope } });
+		} catch {
+			refused = true;
+		}
+		check(`no profile yet for ${scope}, so it cannot run sandboxed`, refused);
+	}
+
+	const env = sandboxEnv(readOnly, {
+		ANTHROPIC_API_KEY: "k",
+		CLAUDE_CODE_ENTRYPOINT: "sdk",
+		DATABASE_URL: "file:secret.db",
+		GITHUB_TOKEN: "t",
+		AWS_SECRET_ACCESS_KEY: "s",
+		HOME: "/home/jonas",
+	});
+	check(
+		"the model key and SDK variables are kept",
+		env.ANTHROPIC_API_KEY === "k" && env.CLAUDE_CODE_ENTRYPOINT === "sdk",
+	);
+	check(
+		"database url, tokens and cloud keys are not passed",
+		env.DATABASE_URL === undefined &&
+			env.GITHUB_TOKEN === undefined &&
+			env.AWS_SECRET_ACCESS_KEY === undefined,
+	);
+	check("HOME is the container's own", env.HOME === "/tmp/home");
+
+	const args = dockerArgs({
+		name: "arnold-x",
+		profile: readOnly,
+		cwd: "/w/tree",
+		envFile: "/tmp/e",
+		command: "/sdk/claude",
+		args: ["--print"],
+		uid: 1000,
+		gid: 1000,
+	}).join(" ");
+	for (const flag of [
+		"--read-only",
+		"--cap-drop ALL",
+		"no-new-privileges",
+		"--user 1000:1000",
+		"--pids-limit",
+		"--memory",
+		"-v /w/tree:/w/tree:ro",
+	]) {
+		check(`docker args include ${flag}`, args.includes(flag));
+	}
+	check(
+		"credentials go through --env-file, not -e",
+		args.includes("--env-file /tmp/e") && !/ -e /.test(args),
+	);
+}
+
+console.log(
+	"\n[21] inside the Docker sandbox: secrets are unreachable and only the artifact directory is writable (feature 2.1)",
+);
+{
+	// Needs Docker and the image (`pnpm sandbox:build`); without them this says so
+	// instead of passing silently.
+	const image = spawnSync("docker", ["image", "inspect", "arnold-sandbox:dev"], {
+		stdio: "ignore",
+	});
+	if (image.status !== 0) {
+		console.log(
+			"  SKIP  docker or the arnold-sandbox:dev image is not available (run: pnpm sandbox:build)",
+		);
+	} else {
+		const here = process.cwd();
+		const scratch = await mkdtemp(path.join(here, ".arnold-smoke-"));
+		try {
+			const ws = path.join(scratch, "tree");
+			const mirror = path.join(scratch, "mirror.git");
+			const canary = path.join(scratch, "canary");
+			await mkdir(ws, { recursive: true });
+			await mkdir(mirror, { recursive: true });
+			await mkdir(canary, { recursive: true });
+			await writeFile(path.join(canary, "secret.txt"), "CANARY-SECRET\n");
+			const profile = profileFor({
+				manifest: { ...scoper, writeScope: "artifacts", artifactGlobs: ["out/*.md"] },
+				workspacePath: ws,
+				mirrorPath: mirror,
+				claudeExecutable: resolveClaudeExecutable(),
+			});
+			const envFile = path.join(scratch, "env");
+			const env = sandboxEnv(profile, {
+				ANTHROPIC_API_KEY: "k",
+				DATABASE_URL: "x",
+				GITHUB_TOKEN: "t",
+			});
+			await writeFile(
+				envFile,
+				Object.entries(env)
+					.map(([k, v]) => `${k}=${v}`)
+					.join("\n") + "\n",
+			);
+			const uid = process.getuid?.() ?? 1000;
+			const gid = process.getgid?.() ?? 1000;
+			const probe = (name: string, command: string) =>
+				`${command} >/dev/null 2>&1 && echo "${name}=yes" || echo "${name}=no"`;
+			const script = [
+				probe("read-canary", `cat ${canary}/secret.txt`),
+				probe("list-canary", `ls -A ${canary}`),
+				probe("wc-canary", `wc -c ${canary}/secret.txt`),
+				probe("grep-canary", `grep -r CANARY ${scratch}`),
+				probe("read-ssh", `ls ${os.homedir()}/.ssh`),
+				probe("read-env-local", `cat ${here}/.env.local`),
+				probe("write-tree", `touch ${ws}/x`),
+				probe("write-out", `touch ${ws}/out/ok.md`),
+				probe("write-etc", "touch /etc/x"),
+				probe("write-tmp", "touch /tmp/x"),
+				probe("write-mirror", `touch ${mirror}/x`),
+				`echo "uid=$(id -u)"`,
+				`echo "secret-vars=$(env | grep -c '^DATABASE_URL=\\|^GITHUB_TOKEN=')"`,
+				`echo "model-key=$(env | grep -c '^ANTHROPIC_API_KEY=')"`,
+			].join("; ");
+			const run = spawnSync(
+				"docker",
+				dockerArgs({
+					name: `arnold-smoke-${process.pid}`,
+					profile,
+					cwd: ws,
+					envFile,
+					command: "sh",
+					args: ["-c", script],
+					uid,
+					gid,
+				}),
+				{ encoding: "utf8" },
+			);
+			const seen = new Map<string, string>();
+			for (const line of run.stdout.split("\n")) {
+				const [k, v] = line.split("=");
+				if (k !== undefined && v !== undefined) seen.set(k, v);
+			}
+			check(
+				"the probe ran in the container",
+				seen.size >= 14,
+				`got ${JSON.stringify(run.stderr.slice(0, 200))}`,
+			);
+			// A "no" only means something if the file exists outside the sandbox, so the
+			// canary is checked on the host first, and the real secrets are asserted
+			// only where they exist.
+			check(
+				"control: the canary is readable on the host",
+				(await readFile(path.join(canary, "secret.txt"), "utf8")).includes("CANARY-SECRET"),
+			);
+			for (const name of ["read-canary", "list-canary", "wc-canary", "grep-canary"]) {
+				check(`unreachable inside the sandbox: ${name}`, seen.get(name) === "no");
+			}
+			for (const [name, hostPath] of [
+				["read-ssh", path.join(os.homedir(), ".ssh")],
+				["read-env-local", path.join(here, ".env.local")],
+			] as const) {
+				if (existsSync(hostPath)) {
+					check(`unreachable inside the sandbox: ${name}`, seen.get(name) === "no");
+				} else {
+					console.log(`  SKIP  ${name}: ${hostPath} does not exist on this host`);
+				}
+			}
+
+			check("the artifact directory is writable", seen.get("write-out") === "yes");
+			for (const name of ["write-tree", "write-etc", "write-mirror"]) {
+				check(`not writable: ${name}`, seen.get(name) === "no");
+			}
+			check("the scratch tmpfs is writable", seen.get("write-tmp") === "yes");
+			check("runs as the host user, not root", seen.get("uid") === String(uid) && uid !== 0);
+			check(
+				"database url and tokens are not in the environment",
+				seen.get("secret-vars") === "0",
+			);
+			check("the model key is in the environment", seen.get("model-key") === "1");
+		} finally {
+			await rm(scratch, { recursive: true, force: true });
+		}
 	}
 }
 
