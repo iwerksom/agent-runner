@@ -134,7 +134,7 @@ it from `/repos` with the local path of any small git repo of the same shape.
 
 ### Executing work orders: a temporary bridge
 
-Until `work-queue` runs on a repo (Section 0 step 3, #36), an accepted work
+Until `work-queue` runs on a repo (feature 4.1, #36), an accepted work
 order reaches code through GitHub and a Claude Code skill, outside Arnold:
 
 1. Run a `*-work-order-scoper` binding on an issue, e.g. `#41` on ledtraad.

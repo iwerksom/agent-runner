@@ -16,7 +16,7 @@
  *
  * All are `read-only`. ledtraad has PRs, CI and a GitHub board since late
  * September but a single committer, and nothing executes an agent's output
- * there yet (Section 0, steps 2 and 3). So the useful thing an agent can do
+ * there yet (ROADMAP features 3.1 and 4.1). So the useful thing an agent can do
  * here is notice something and say so. Nothing in this directory may write to
  * the repo.
  *
