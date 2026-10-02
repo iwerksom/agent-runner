@@ -10,7 +10,7 @@
  * The repo stays the source of truth for what an agent does; the manifest adds
  * the metadata those files do not carry.
  *
- * See docs/architecture.md sections 5 to 9 in example-repo.
+ * See docs/architecture.md sections 4 to 7, and docs/reference-agents.md for worked examples.
  */
 
 /** Slash command, subagent, fan-out script, or a prompt Arnold owns itself. */

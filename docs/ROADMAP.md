@@ -16,12 +16,9 @@ what is verified and what is known broken, lives in `docs/HANDOVER.md`.
 > **This roadmap is the single source of truth** for what Arnold is building and
 > in what order. Work is named by phase and by feature (`7.2` is the second
 > feature of Phase 7); the feature docs are in `docs/features/`, each with a user
-> story and its GitHub issues. Other documents (`docs/architecture.md`
-> Section 0, `docs/DECISIONS.md`) give the reasons; they do not set the order.
->
-> `docs/architecture.md` Section 0 (2026-09-28) re-scoped Arnold as a
-> vendor-agnostic team tool. Where a phase below still names Redis, BullMQ or the
-> Agent SDK as the execution layer, Section 0 wins and the phase says so.
+> story and its GitHub issues. Other documents give the reasons and the shape:
+> `docs/architecture.md` is the target architecture and `docs/DECISIONS.md` records
+> why; neither sets the order.
 
 ## Build order
 
@@ -213,7 +210,7 @@ precondition until someone other than the author uses the console (DECISIONS #26
 
 **Features**
 
-- [4.1 Mutating agents on ledtraad](features/4.1-mutating-agents-on-ledtraad.md): Planned (#36, #26)
+- [4.1 Mutating agents on ledtraad](features/4.1-mutating-agents-on-ledtraad.md): Planned (#36, #26, #53)
 - [4.2 Approved work orders reach code](features/4.2-approved-work-orders-reach-code.md): Done (#31, #40)
 
 **Acceptance criteria**

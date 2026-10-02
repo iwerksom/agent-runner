@@ -48,7 +48,7 @@ The one property every phase must preserve:
 | File                   | What it is                                                              |
 | ---------------------- | ----------------------------------------------------------------------- |
 | `README.md`            | How to run it, and the traps that bite on first setup                   |
-| `docs/architecture.md` | The plan of record, written before the code. Long.                      |
+| `docs/architecture.md` | The target architecture.                                                |
 | `docs/DECISIONS.md`    | Why the code looks like this. Read before changing anything structural. |
 | `docs/ROADMAP.md`      | Eight phases with acceptance criteria                                   |
 | `docs/HANDOVER.md`     | This file: what actually works today                                    |

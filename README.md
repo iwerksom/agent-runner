@@ -13,7 +13,7 @@ Point it at a checkout, write a manifest per agent, press Run.
 | ---------------------------------------------- | ------------------------------------------------------------------------------------- |
 | [`docs/HANDOVER.md`](docs/HANDOVER.md)         | **Start here.** What works today, what has run on which tree, and how to trace a run. |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md)       | Why the code looks like this. Read before changing anything structural.               |
-| [`docs/architecture.md`](docs/architecture.md) | The plan of record, written before the code.                                          |
+| [`docs/architecture.md`](docs/architecture.md) | The target architecture: the shape, the contract an agent meets, and the runtime.   |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md)           | Eight phases with acceptance criteria.                                                |
 
 This repo is Phase 0: single app, SQLite, in-process execution, no auth.
