@@ -37,6 +37,7 @@ model Repo {
   agents     AgentRepo[]
   runs       Run[]
   workspaces Workspace[]
+  findings   Finding[]
 
   createdAt DateTime @default(now())
 }
@@ -191,6 +192,40 @@ model Artifact {
   createdAt DateTime @default(now())
 
   @@index([runId])
+}
+
+/// One thing an agent found, kept across runs. Identity is the fingerprint
+/// (agent + file + normalised claim), never the line, because lines move and
+/// that is what drift is. See packages/core/src/findings.ts.
+model Finding {
+  id          String @id @default(cuid())
+  repoId      String
+  repo        Repo   @relation(fields: [repoId], references: [id], onDelete: Restrict)
+  agentId     String
+  fingerprint String
+
+  /// The run that first reported it, and the latest run that still did.
+  sourceRunId String
+  lastRunId   String
+
+  title    String
+  file     String
+  line     Int?
+  claim    String
+  measured String
+  command  String
+  /// document-stale | repo-changed | unclear
+  verdict  String
+  note     String @default("")
+
+  /// open | closed. "filed" arrives with the tracker work (#34).
+  state       String    @default("open")
+  firstSeenAt DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  closedAt    DateTime?
+
+  @@unique([repoId, agentId, fingerprint])
+  @@index([repoId, state])
 }
 
 /// The structured result an agent declares. This is what gets charted.

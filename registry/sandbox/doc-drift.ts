@@ -81,6 +81,7 @@ export const manifest: AgentManifest = {
 	],
 
 	outcome: { kind: "json-block" },
+	trackFindings: true,
 	reasonCodes: [
 		"stale-counts",
 		"missing-path",

@@ -35,6 +35,7 @@ export * from "./dispatcher.js";
 
 // After a run: artifacts, outcome, provenance, spend, live events.
 export * from "./collect.js";
+export * from "./findings.js";
 export * from "./notary.js";
 export * from "./ledger.js";
 export * from "./bus.js";
