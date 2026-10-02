@@ -9,12 +9,14 @@ saw, and what it produced.
 
 Point it at a checkout, write a manifest per agent, press Run.
 
-| Doc                                            | What it is                                                                            |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------- |
-| [`docs/HANDOVER.md`](docs/HANDOVER.md)         | **Start here.** What works today, what has run on which tree, and how to trace a run. |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md)       | Why the code looks like this. Read before changing anything structural.               |
-| [`docs/architecture.md`](docs/architecture.md) | The plan of record, written before the code.                                          |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md)           | Eight phases with acceptance criteria.                                                |
+| Doc                                                    | What it is                                                                                 |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| [`docs/RUNNING.md`](docs/RUNNING.md)                   | How to run and trace it, what has run on which tree, and the traps that cost time.         |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md)               | Why the code looks like this. Read before changing anything structural.                    |
+| [`docs/architecture.md`](docs/architecture.md)         | The target architecture: the shape, the contract an agent meets, and the runtime.          |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md)                   | The single source of truth: nine phases, build order, numbered features.                   |
+| [`docs/features/`](docs/features/)                     | One doc per feature: user story, issues, acceptance.                                       |
+| [`docs/reference-agents.md`](docs/reference-agents.md) | Worked-example agents. [`docs/adding-an-agent.md`](docs/adding-an-agent.md) is the how-to. |
 
 This repo is Phase 0: single app, SQLite, in-process execution, no auth.
 
@@ -33,8 +35,8 @@ The five words are the five modules, not decoration:
 **The API enqueues, something else executes against a leased workspace, and runs
 are durable records with declared artifacts.**
 
-Phase 0 runs the executor in-process with SQLite and an EventEmitter. Phase 1
-swaps in a worker process, Postgres, and Redis. Nothing above changes, because
+Phase 0 runs the executor in-process with SQLite and an EventEmitter. Phase 5
+swaps in a worker process, Postgres, and a Postgres queue. Nothing above changes, because
 only the components behind that sentence get replaced.
 
 ## Getting started
@@ -82,7 +84,7 @@ is nullable and deleting a repo with history would silently detach it rather tha
 fail. See `docs/DECISIONS.md` #16.
 
 > Phase 0 has no auth, and registering a repo names a filesystem path Arnold will
-> clone and run agents against. Keep the console on localhost until Phase 3.
+> clone and run agents against. Keep the console on localhost until Phase 8.
 
 ### One env file, injected twice
 
@@ -177,9 +179,9 @@ every write scope the model supports:
 
 **All eight are registered, and only the read-only and `artifacts` tiers can be
 triggered.** The rest carry a `disabled` reason and are held in code until
-Phase 3 brings auth and per-tier credentials. There is still no auth, so anything
+Phase 2 brings per-tier credentials and Phase 8 brings auth. There is still no auth, so anything
 reaching the port can trigger the ones that are runnable. See
-[`docs/HANDOVER.md`](docs/HANDOVER.md).
+[`docs/RUNNING.md`](docs/RUNNING.md).
 
 ## The thing worth understanding before adding an agent
 
@@ -227,7 +229,7 @@ and hoped for:
 ```
 arnold/
   packages/core/          types, store, and every runtime module
-    prisma/schema.prisma  SQLite in Phase 0, Postgres in Phase 1
+    prisma/schema.prisma  SQLite in Phase 0, Postgres in Phase 5
     src/agents.ts         the manifest contract; read this first
   registry/               manifest overlays, one directory per repo
     example-repo/

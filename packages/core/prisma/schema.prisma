@@ -1,4 +1,4 @@
-// Purpose: Arnold's store. Phase 0 runs on SQLite; Phase 1 swaps the datasource
+// Purpose: Arnold's store. Phase 0 runs on SQLite; Phase 5 swaps the datasource
 // for Postgres without reshaping the model.
 //
 // Two SQLite accommodations to undo at that point, both marked JSON-TEXT below:

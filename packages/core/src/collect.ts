@@ -202,7 +202,7 @@ export async function collectArtifacts(
 					runId,
 					kind: artifactKindFor(relativePath),
 					path: relativePath.split(path.sep).join("/"),
-					// A key, not an absolute path: Phase 1 swaps the root for a
+					// A key, not an absolute path: Phase 5 swaps the root for a
 					// bucket and the key stays valid.
 					storageKey: `${runId}/${fileName}`,
 					mimeType: mimeTypeFor(relativePath),

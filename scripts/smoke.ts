@@ -531,8 +531,8 @@ console.log("\n[12] outcome parsing: a work order with no REJECT line is accepte
 
 console.log("\n[13] Phase 0 hold: nothing above `artifacts` may be triggerable");
 {
-	// The invariant, not a list of two names: Phase 3 gates triggering by role and
-	// mounts credentials per tier, and until it lands anything that can write to a
+	// The invariant, not a list of two names: Phase 8 gates triggering by role and
+	// Phase 2 mounts credentials per tier, and until it lands anything that can write to a
 	// working tree is pressable by anyone who can reach the console. Stated this
 	// way so a NEW mutating manifest fails here rather than shipping runnable.
 	const registered = [
@@ -549,7 +549,7 @@ console.log("\n[13] Phase 0 hold: nothing above `artifacts` may be triggerable")
 	check("there are mutating manifests to check", mutating.length > 0, `${mutating.length} found`);
 	for (const manifest of mutating) {
 		check(
-			`${manifest.id} (${manifest.writeScope}) is held until Phase 3`,
+			`${manifest.id} (${manifest.writeScope}) is held until Phase 2 or Phase 8`,
 			manifest.disabled !== undefined,
 			"a manifest above `artifacts` must declare `disabled` while the console has no auth",
 		);

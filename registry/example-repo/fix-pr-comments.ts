@@ -10,11 +10,11 @@
  * genuine stop-and-ask points: no resolvable ticket from the branch name, and
  * the same substantive comment reappearing after being addressed.
  *
- * WARNING for the phase this is registered in. Phase 3 (role gating) and Phase 4
+ * WARNING for the phase this is registered in. Phase 8 (role gating) and Phase 3
  * (the awaiting_input answer path) do not exist yet. So: nothing gates who can
  * start it, and when it does stop to ask, the run will sit in `awaiting_input`
  * with the question preserved but no way to answer from the console. Finish
- * those in local Claude Code until Phase 4 lands.
+ * those in local Claude Code until Phase 3 lands.
  */
 
 import type { AgentManifest } from "@arnold/core";
@@ -39,11 +39,11 @@ export const manifest: AgentManifest = {
 
 	// The widest scope registered: it pushes, comments on PRs and resolves threads.
 	// It is already unreachable because `needs-human` has no answer path until
-	// Phase 4, but that is an execution-mode accident rather than a decision — and
+	// Phase 3, but that is an execution-mode accident rather than a decision — and
 	// the relaxation that makes it headless would silently make it pressable. The
 	// hold is stated outright so removing it has to be deliberate.
 	disabled: {
-		reason: "Held until Phase 3: external writes (pushes, PR comments, thread resolution) with no auth or per-tier credentials yet.",
+		reason: "Held until the Phase 2 sandbox or Phase 8 auth: external writes (pushes, PR comments, thread resolution) with no auth or per-tier credentials yet.",
 	},
 
 	args: [
@@ -129,7 +129,7 @@ export const manifest: AgentManifest = {
 	budget: { dailyCostCapUsd: 10, maxTurns: 120, maxWallClockMinutes: 60 },
 
 	notes: [
-		"Registered before Phase 3 and Phase 4. Nothing gates who can start it, and a stop-and-ask leaves the run in awaiting_input with no way to answer from the console yet.",
+		"Registered before role gating (Phase 8) and the answer path (Phase 3). Nothing gates who can start it, and a stop-and-ask leaves the run in awaiting_input with no way to answer from the console yet.",
 		"Prerequisite in the executor image: the gh extension k1LoW/gh-copilot-review. Without it every run ends as copilot_error.",
 		"Spawns pr-loop-analyzer only when comments remain after the final recheck at the round cap. A clean final recheck ends as converged_on_recheck with no analyzer.",
 		"Pushes to the PR head branch, not to main, so it needs no mainBookkeeping grant.",

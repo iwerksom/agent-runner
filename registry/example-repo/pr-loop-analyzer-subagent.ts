@@ -16,7 +16,7 @@
  * shadowed: before this file, sync reported "unregistered: none" while an
  * external-writes prompt sat in the checkout undescribed.
  *
- * Held under the same Phase 3 rule as every other mutating agent.
+ * Held under the same rule as every other mutating agent (Phase 2 sandbox or Phase 8 auth).
  */
 
 import type { AgentManifest } from "@arnold/core";
@@ -45,7 +45,7 @@ export const manifest: AgentManifest = {
 	invocable: "direct",
 
 	disabled: {
-		reason: "Held until Phase 3: files Jira issues and writes enhancement drafts, and the console has no auth or per-tier credentials yet.",
+		reason: "Held until the Phase 2 sandbox or Phase 8 auth: files Jira issues and writes enhancement drafts, and the console has no auth or per-tier credentials yet.",
 	},
 
 	args: [
@@ -81,7 +81,7 @@ export const manifest: AgentManifest = {
 	writeScope: "external-writes",
 	scopeEnforcement: "manifest",
 	// It stops to ask when no Jira mechanism is reachable and the fallback draft
-	// needs a home, and Phase 4 owns the answer path.
+	// needs a home, and Phase 3 owns the answer path.
 	execution: "needs-human",
 
 	artifactGlobs: [".pr-loop/reports/PR-*.md", ".pr-loop/enhancements/*.md"],
@@ -118,6 +118,6 @@ export const manifest: AgentManifest = {
 
 	notes: [
 		"Shares a filename with the pr-loop-analyzer COMMAND but not its behaviour or write scope. Reconciling the two files in example-repo would let this overlay be deleted.",
-		"Jira is reached through an Atlassian MCP tool or a jira/acli CLI, neither of which is granted here. Phase 3 decides how that credential is mounted.",
+		"Jira is reached through an Atlassian MCP tool or a jira/acli CLI, neither of which is granted here. Phase 2 decides how that credential is mounted.",
 	],
 };

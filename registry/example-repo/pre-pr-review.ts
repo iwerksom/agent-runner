@@ -29,14 +29,14 @@ export const manifest: AgentManifest = {
 	},
 	invocable: "direct",
 
-	// Phase 4 registers the mutating agents; Phase 3 is what makes them safe to
+	// Phase 3 registers the mutating agents; Phase 2 is what makes them safe to
 	// press. Until roles gate triggering and credentials are mounted per tier,
 	// this writes to a real working tree from a console with no auth. The leased
 	// worktree also carries the target repo's own .claude/settings.local.json,
 	// which pre-approves git write commands, so "working-tree" is narrower in the
 	// manifest than in the environment the run actually gets.
 	disabled: {
-		reason: "Held until Phase 3: it writes to the working tree, and the console has no auth or per-tier credentials yet.",
+		reason: "Held until the Phase 2 sandbox or Phase 8 auth: it writes to the working tree, and the console has no auth or per-tier credentials yet.",
 	},
 
 	args: [

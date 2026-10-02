@@ -169,6 +169,6 @@ export const manifest: AgentManifest = {
 
 	notes: [
 		"Run it on an issue before starting work on it. A REJECT is the useful outcome: it names the decision or premise to fix first.",
-		"Its order ends in 'branch pushed, draft PR open'. Nothing executes orders on ledtraad yet (ROADMAP Phase 4, S3), so a person or a Claude session does.",
+		"Its order ends in 'branch pushed, draft PR open'. Nothing executes orders on ledtraad yet (ROADMAP Phase 3, feature 3.1), so a person or a Claude session does.",
 	],
 };

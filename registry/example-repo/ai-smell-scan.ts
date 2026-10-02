@@ -8,7 +8,7 @@
  * "Run" on this would scan one batch and tell you nothing about the codebase.
  *
  * The unit an operator actually wants is that runner, registered as a `harness`
- * whose run is a parent with one child per batch. That is Phase 2 work, and it
+ * whose run is a parent with one child per batch. That is Phase 6 work, and it
  * needs the script read first: its real argument surface, budget mechanism and
  * Jira behaviour are asserted by this agent's prompt but only verifiable in the
  * script itself.
@@ -98,7 +98,7 @@ export const manifest: AgentManifest = {
 	budget: { dailyCostCapUsd: 2, maxTurns: 20, maxWallClockMinutes: 12 },
 
 	notes: [
-		"Not runnable on its own by design. Register scripts/ai-smell-runner.py as a harness (Phase 2) to get a whole scan behind one button.",
+		"Not runnable on its own by design. Register scripts/ai-smell-runner.py as a harness (Phase 6) to get a whole scan behind one button.",
 		"Plugin-provided MCP servers do not load in the headless `claude -p` process, which is why this agent files nothing itself. Arnold's executor uses the SDK rather than the CLI, so MCP availability must be re-verified rather than assumed either way.",
 		"Emits findings only. It must never emit a `tickets` key: the runner owns Jira.",
 	],

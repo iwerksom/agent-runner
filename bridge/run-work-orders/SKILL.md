@@ -9,7 +9,7 @@ Arnold's `work-order-scoper` writes a work order for one GitHub issue, and
 `pnpm orders:publish` (in Arnold) posts it on that issue as a comment
 labelled `wo:proposed`. The repo owner approves it by swapping the label to
 `wo:approved`. This skill executes approved orders. It is the executor half of
-ROADMAP Phase 4, done by hand until Arnold's `work-queue` runs here (Arnold
+ROADMAP Phase 3, done by hand until Arnold's `work-queue` runs here (Arnold
 issue #36); delete it then.
 
 The order was written so that an unattended agent can follow it without asking

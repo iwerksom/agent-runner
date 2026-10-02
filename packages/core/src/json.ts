@@ -1,7 +1,7 @@
 /**
  * Purpose: typed access to the JSON-as-TEXT columns SQLite forces on us
  * (`Agent.manifest`, `Run.args`, `RunEvent.payload`, ...). Every read and write
- * of those columns goes through here, so when Phase 1 swaps SQLite for Postgres
+ * of those columns goes through here, so when Phase 5 swaps SQLite for Postgres
  * and the columns become real `jsonb`, only this file changes.
  *
  * Call sites never touch JSON.parse directly: a malformed column must degrade to

@@ -168,7 +168,7 @@ export async function dispatchRun(input: DispatchRunInput): Promise<DispatchRunR
 		},
 	});
 
-	// Phase 1 swap point: replace this with a BullMQ enqueue. Nothing else about
+	// Phase 5 swap point: replace this with a queue enqueue. Nothing else about
 	// the Dispatcher changes — the Runner already takes only a runId, so the
 	// worker calls the same function. Until then the run executes in the web
 	// process, and the rejection is swallowed here because runAgent already
