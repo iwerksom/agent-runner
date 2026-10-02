@@ -161,7 +161,12 @@ export const manifest: AgentManifest = {
 	// the wrong thing to be strict about: this agent is cheap per finding and its
 	// whole value is being run often. Four full runs a day, and the turn cap is
 	// what stops a wandering one.
-	budget: { dailyCostCapUsd: 8, maxTurns: 45, maxWallClockMinutes: 15 },
+	//
+	// 45 turns turned out too tight (2026-10-02): runs took 38 to 66 turns, one
+	// died at the cap with no outcome ($2.69 spent, nothing recorded), and agents
+	// that track findings now also re-check each open one. 70 leaves room for that;
+	// the daily cost cap is the brake that matters.
+	budget: { dailyCostCapUsd: 8, maxTurns: 70, maxWallClockMinutes: 15 },
 
 	notes: [
 		"The prompt is repo-agnostic. To run this against another repo, add a sibling binding with its own measurements — do not copy the prompt.",
