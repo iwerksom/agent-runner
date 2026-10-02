@@ -38,6 +38,8 @@ export * from "./collect.js";
 export * from "./findings.js";
 export * from "./filing.js";
 export * from "./sandbox.js";
+export * from "./selftest.js";
+export * from "./hold.js";
 export * from "./notary.js";
 export * from "./ledger.js";
 export * from "./bus.js";

@@ -43,7 +43,7 @@ export const manifest: AgentManifest = {
 	// the relaxation that makes it headless would silently make it pressable. The
 	// hold is stated outright so removing it has to be deliberate.
 	disabled: {
-		reason: "Held until the Phase 2 sandbox or Phase 8 auth: external writes (pushes, PR comments, thread resolution) with no auth or per-tier credentials yet.",
+		reason: "Held: it needs the answer path for `awaiting_input` (Phase 3) and an external-writes sandbox profile, which does not exist yet (Phase 2).",
 	},
 
 	args: [

@@ -119,11 +119,12 @@ infrastructure.
 
 ## Phase 2: Sandbox and a hardened gate
 
-**Status: next.** The gate is mostly hardened; the sandbox is a Docker container
-(feature 2.1, DECISIONS #28). The spike worked (DECISIONS #29) and `read-only`,
-`artifacts`, `working-tree`, `branch-push` and `draft-pr` run in it behind
-`ARNOLD_SANDBOX=docker` (DECISIONS #30); `external-writes` has no profile, and the
-solo-mode release is next.
+**Status: built; two gaps remain.** The sandbox is a Docker container (feature 2.1,
+DECISIONS #28 to #31): `read-only`, `artifacts`, `working-tree`, `branch-push` and
+`draft-pr` run in it, and solo mode (`ARNOLD_SOLO=1` with `ARNOLD_SANDBOX=docker`)
+releases the three that can change a repo, gated by a canary self-test. Gaps:
+`external-writes` has no profile, and a push to GitHub with a real token has not
+been tried.
 
 One container profile per write scope, so a read-only run provably cannot read
 secrets, write or push, whatever the agent tries. The tool gate in
@@ -134,28 +135,32 @@ button.
 
 **Features**
 
-- [2.1 One container sandbox per write scope](features/2.1-sandbox-per-write-scope.md): Planned (#21, #35)
+- [2.1 One container sandbox per write scope](features/2.1-sandbox-per-write-scope.md): Done for its scope (#21, #35, #65)
 - [2.2 The gate refuses what it should, and nothing else](features/2.2-gate-hardening.md): In progress (#12, #14, #37, #27, #15)
 
 **Acceptance criteria**
 
-- A `read-only` or `artifacts` run has no push credential and no forge token in
-  its environment, so the tool policy and the environment both refuse.
+- [x] A `read-only` or `artifacts` run has no push credential and no forge token in
+      its environment, so the tool policy and the environment both refuse.
 - `read-only`: worktree mounted read-only, no network except the gateway, no
   credentials. `artifacts`: one writable output directory. `working-tree`:
   writable worktree, no credentials. `branch-push` and up: a forge token scoped
   to one repo.
-- Reads are confined to the worktree, including Bash operands of allow-listed
-  programs.
-- A solo-mode setting: in it, a held tier is runnable once its sandbox profile
-  exists. Outside solo mode the hold still needs auth (Phase 8).
+- [x] Reads are confined to the worktree, including Bash operands of allow-listed
+      programs (smoke [21] reads a canary, `~/.ssh` and `.env.local` from inside).
+- [x] A solo-mode setting: in it, a held tier is runnable once its sandbox profile
+      exists and a canary self-test passes. Outside solo mode the hold still needs
+      auth (Phase 8).
 - [x] No allow-listed command can run arbitrary code, and the gate runs ahead of
       the CLI's own auto-approval.
 - [x] Separators inside quotes do not split a command; the safe-filter exemption
       applies only after a pipe.
 - [x] `Read`, `Grep` and `Glob` stay inside the worktree and never open `.env`
       secrets.
-- [ ] User-level skills from the operator's `~/.claude` do not load into runs.
+- [x] The operator's account-provided skills do not load into sandboxed runs
+      (unsandboxed runs still load them).
+- [ ] `external-writes` has a sandbox profile.
+- [ ] A push to GitHub from the sandbox with a real token has been done once (#65).
 
 ---
 
@@ -177,7 +182,7 @@ other than the author uses the console (DECISIONS #26).
 
 **Features**
 
-- [3.1 Mutating agents on ledtraad](features/3.1-mutating-agents-on-ledtraad.md): Planned (#36, #26, #53)
+- [3.1 Mutating agents on ledtraad](features/3.1-mutating-agents-on-ledtraad.md): Planned (#36, #26, #53, #64)
 
 **Acceptance criteria**
 

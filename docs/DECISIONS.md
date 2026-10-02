@@ -742,3 +742,55 @@ have.
 
 **Not verified:** a push to GitHub over https with a real token (it needs a
 token, and a branch on a real repo).
+
+## 31. Solo mode releases the held tiers, and a canary self-test gates each release
+
+Feature 2.1, step 5 (issue #35, DECISIONS #26). Auth is Phase 8, so for the author
+on localhost the hold on `working-tree` and above would never lift. The hold
+guards against what an agent can do, which the sandbox now contains; it does not
+guard against who presses the button, which only auth can.
+
+**The rule** (`packages/core/src/hold.ts`). A scope that can change a repo
+(`working-tree` and above) is held unless **both** `ARNOLD_SOLO=1` and
+`ARNOLD_SANDBOX=docker` are set **and** the scope has a sandbox profile. So solo
+mode alone releases nothing (no sandbox), the sandbox alone releases nothing (the
+console might be shared), and `external-writes` is never released because it has no
+profile. The hold is computed on every request and shown on the agent card, not
+stored on the agent row, so changing the environment needs no registry sync.
+
+**The self-test** (`packages/core/src/selftest.ts`). A profile that exists is not a
+profile that holds. Before a run at a sandboxed tier is accepted, a real container
+is started with that tier's real profile and asked to do what it must not: read a
+canary that exists only outside its mounts, list `~/.ssh`, find a database URL in
+its environment, write the root file system, and per tier stage, commit or write
+where it should not (and, at the push tiers, commit and push to a local bare
+remote). Any unexpected result keeps the tier held and the refusal lists the
+failures. A pass is cached for 15 minutes and a failure for 1.
+
+**Two more places enforce it.** The runner refuses to start a tier that needs the
+sandbox when the sandbox is off, so a caller that skips the dispatcher still cannot
+run unsandboxed. And smoke [13] states the invariant over every registered
+manifest, so a new mutating manifest cannot ship runnable by accident. The manifests
+the sandbox now releases (`pre-pr-review`, `work-queue`) lost their static
+`disabled`; the two external-writes manifests keep theirs, reworded.
+
+**Checked live.** Default console: the working-tree test agent is held, on the card
+and at dispatch. Solo mode with the sandbox: the same agent is runnable, dispatch
+started a self-test container and then the run container, and the agent corrected a
+stale count in a README ($0.11, 4 turns). With the image removed, the tier stayed
+held with "Docker or the arnold-sandbox:dev image is not available". Smoke [23] runs
+the self-test for every sandboxed tier and also checks that it fails when the
+sandbox leaks (the repo mounted writable) and when `working-tree` can write the
+mirror, because a test that cannot fail proves nothing.
+
+**Issue #15, now with direct evidence.** On same-day runs, `artifact-capabilities`,
+`artifact-design`, `artifact-diagramming` and `schedule` appear in the slash-command
+list of an unsandboxed run and are absent from a sandboxed one; bundled commands
+(`code-review`, `dataviz`, `design-sync`, `simplify`) are in both. So the operator's
+account-provided skills no longer reach a sandboxed run. Unsandboxed runs still
+load them.
+
+**Not done.** `external-writes` has no profile. That matters for Phase 3: a
+`work-queue` bound to the GitHub tracker declares `external-writes` (it edits issue
+labels), so it stays held. Releasing it needs a profile with a tracker token, or the
+tracker binding classified differently.

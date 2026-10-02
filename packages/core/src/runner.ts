@@ -16,6 +16,7 @@ import { isTerminalStatus, type AgentManifest } from "./agents.js";
 import { publishRunEvent, publishRunStatus } from "./bus.js";
 import { collectArtifacts, parseOutcome, snapshotArtifacts } from "./collect.js";
 import { knownFindingsContext, recordFindings } from "./findings.js";
+import { requiresSandbox } from "./hold.js";
 import { dockerSpawner, profileFor, resolveClaudeExecutable, sandboxEnabled } from "./sandbox.js";
 import { prisma } from "./db.js";
 import { errorMessageOf, NotFoundError, ValidationError } from "./errors.js";
@@ -260,6 +261,14 @@ export async function runAgent(runId: string): Promise<void> {
 		// Opt-in while the sandbox is a spike (ARNOLD_SANDBOX=docker): the whole
 		// `claude` process runs in a container shaped by the manifest's write scope.
 		// A scope without a profile throws here, before anything runs.
+		if (requiresSandbox(fullManifest.writeScope) && !sandboxEnabled()) {
+			// The dispatcher refuses this before a run exists; this is the same rule at
+			// the one place every execution passes through, for any caller that skips it.
+			throw new ValidationError(
+				`agent ${fullManifest.id} (${fullManifest.writeScope}) must run in the Docker sandbox, which is off (ARNOLD_SANDBOX=docker)`,
+				{ agentId: fullManifest.id },
+			);
+		}
 		if (sandboxEnabled()) {
 			const claudeExecutable =
 				options.pathToClaudeCodeExecutable ?? resolveClaudeExecutable();

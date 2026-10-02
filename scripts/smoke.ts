@@ -23,6 +23,7 @@ import {
 	snapshotArtifacts,
 } from "../packages/core/src/collect.js";
 import { atLeast } from "../packages/core/src/agents.js";
+import { releasableInSoloMode, tierHold } from "../packages/core/src/hold.js";
 import { extractRunTicketKeys, extractTicketKeys } from "../packages/core/src/notary.js";
 import { preflightPromptValues, renderPrompt, validateArgs } from "../packages/core/src/prompt.js";
 import { gateAsPreToolUseHook } from "../packages/core/src/sdkAdapter.js";
@@ -35,6 +36,7 @@ import {
 	resolveClaudeExecutable,
 	sandboxEnv,
 } from "../packages/core/src/sandbox.js";
+import { runSandboxSelfTest } from "../packages/core/src/selftest.js";
 import { registryManifestsBySlug } from "../registry/index.js";
 import { manifest as aiSmellScan } from "../registry/example-repo/ai-smell-scan.js";
 import { manifest as fixPrComments } from "../registry/example-repo/fix-pr-comments.js";
@@ -539,12 +541,14 @@ console.log("\n[12] outcome parsing: a work order with no REJECT line is accepte
 	}
 }
 
-console.log("\n[13] Phase 0 hold: nothing above `artifacts` may be triggerable");
+console.log(
+	"\n[13] the hold: nothing above `artifacts` is runnable unless solo mode and the sandbox release it",
+);
 {
-	// The invariant, not a list of two names: Phase 8 gates triggering by role and
-	// Phase 2 mounts credentials per tier, and until it lands anything that can write to a
-	// working tree is pressable by anyone who can reach the console. Stated this
-	// way so a NEW mutating manifest fails here rather than shipping runnable.
+	// The invariant, not a list of names, so a NEW mutating manifest is covered the
+	// day it lands. A tier that can change a repo is held when the console is shared
+	// or the sandbox is off, and released only in solo mode with the Docker sandbox
+	// and only for scopes that have a sandbox profile (feature 2.1, DECISIONS #26).
 	const registered = [
 		analyzer,
 		planWeek,
@@ -555,23 +559,71 @@ console.log("\n[13] Phase 0 hold: nothing above `artifacts` may be triggerable")
 		fixPrComments,
 		analyzerSubagent,
 	];
+	const nothing: NodeJS.ProcessEnv = {};
+	const soloOnly: NodeJS.ProcessEnv = { ARNOLD_SOLO: "1" };
+	const solo: NodeJS.ProcessEnv = { ARNOLD_SOLO: "1", ARNOLD_SANDBOX: "docker" };
+	const sandboxOnly: NodeJS.ProcessEnv = { ARNOLD_SANDBOX: "docker" };
 	const mutating = registered.filter((manifest) => atLeast(manifest.writeScope, "working-tree"));
 	check("there are mutating manifests to check", mutating.length > 0, `${mutating.length} found`);
 	for (const manifest of mutating) {
 		check(
-			`${manifest.id} (${manifest.writeScope}) is held until Phase 2 or Phase 8`,
-			manifest.disabled !== undefined,
-			"a manifest above `artifacts` must declare `disabled` while the console has no auth",
+			`${manifest.id} (${manifest.writeScope}) is held by default`,
+			tierHold(manifest, nothing) !== undefined,
 		);
 		check(
-			`${manifest.id} says why, not just that`,
-			(manifest.disabled?.reason ?? "").length > 20,
-			`got ${JSON.stringify(manifest.disabled?.reason)}`,
+			`${manifest.id}: the sandbox alone does not release it (that needs solo mode)`,
+			tierHold(manifest, sandboxOnly) !== undefined,
+		);
+		check(
+			`${manifest.id}: solo mode alone does not release it (that needs the sandbox)`,
+			tierHold(manifest, soloOnly) !== undefined,
+		);
+		const released = tierHold(manifest, solo) === undefined;
+		check(
+			`${manifest.id}: solo mode with the sandbox releases it exactly when its scope has a profile`,
+			released === releasableInSoloMode(manifest.writeScope),
+		);
+		if (manifest.disabled !== undefined) {
+			check(
+				`${manifest.id} says why its own hold exists, not just that`,
+				manifest.disabled.reason.length > 20,
+				`got ${JSON.stringify(manifest.disabled.reason)}`,
+			);
+		}
+	}
+	check(
+		"external-writes is never released by solo mode",
+		tierHold({ id: "x", writeScope: "external-writes" }, solo) !== undefined,
+	);
+	for (const scope of ["working-tree", "branch-push", "draft-pr"] as const) {
+		check(
+			`${scope} is released by solo mode with the sandbox`,
+			tierHold({ id: "x", writeScope: scope }, solo) === undefined,
 		);
 	}
+	for (const scope of ["read-only", "artifacts"] as const) {
+		check(
+			`${scope} is never held`,
+			tierHold({ id: "x", writeScope: scope }, nothing) === undefined,
+		);
+	}
+	check(
+		"the hold names how to release it",
+		(tierHold({ id: "x", writeScope: "draft-pr" }, nothing) ?? "").includes("ARNOLD_SOLO=1"),
+	);
 	// The two that carry Phase 0 must stay pressable, or the hold has overreached.
-	check("work-order-scoper is still runnable", scoper.disabled === undefined);
-	check("pr-loop-analyzer is still runnable", analyzer.disabled === undefined);
+	check(
+		"work-order-scoper is still runnable",
+		scoper.disabled === undefined && tierHold(scoper, nothing) === undefined,
+	);
+	check(
+		"pr-loop-analyzer is still runnable",
+		analyzer.disabled === undefined && tierHold(analyzer, nothing) === undefined,
+	);
+	check(
+		"the manifests the sandbox releases carry no static hold of their own",
+		prePrReview.disabled === undefined && workQueue.disabled === undefined,
+	);
 }
 
 console.log("\n[14] every registered console prompt renders with no {{placeholder}} left");
@@ -1338,6 +1390,58 @@ console.log("\n[22] inside the sandbox: what git can write depends on the tier (
 		} finally {
 			await rm(scratch, { recursive: true, force: true });
 		}
+	}
+}
+
+console.log(
+	"\n[23] the canary self-test releases a tier only when a real container proves the sandbox holds (feature 2.1)",
+);
+{
+	const image = spawnSync("docker", ["image", "inspect", "arnold-sandbox:dev"], {
+		stdio: "ignore",
+	});
+	if (image.status !== 0) {
+		console.log(
+			"  SKIP  docker or the arnold-sandbox:dev image is not available (run: pnpm sandbox:build)",
+		);
+	} else {
+		for (const scope of [
+			"read-only",
+			"artifacts",
+			"working-tree",
+			"branch-push",
+			"draft-pr",
+		] as const) {
+			const result = await runSandboxSelfTest(scope);
+			check(`self-test passes for ${scope}`, result.ok, result.failures.join("; "));
+		}
+		// A test that cannot fail proves nothing: widen a mount so the canary is
+		// reachable, and the self-test must catch it.
+		const leaky = await runSandboxSelfTest("read-only", {
+			tamper: (profile) => ({
+				...profile,
+				mounts: [
+					...profile.mounts,
+					{ host: process.cwd(), container: process.cwd(), writable: true },
+				],
+			}),
+		});
+		check(
+			"self-test fails when the sandbox leaks (the repo mounted writable)",
+			!leaky.ok && leaky.failures.length > 0,
+			JSON.stringify(leaky.failures),
+		);
+		const mirrorWritable = await runSandboxSelfTest("working-tree", {
+			tamper: (profile) => ({
+				...profile,
+				mounts: profile.mounts.map((m) => ({ ...m, writable: true })),
+			}),
+		});
+		check(
+			"self-test fails when working-tree can write the mirror",
+			!mirrorWritable.ok,
+			JSON.stringify(mirrorWritable.failures),
+		);
 	}
 }
 

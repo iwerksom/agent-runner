@@ -44,14 +44,13 @@ export const manifest: AgentManifest = {
 	},
 	invocable: "direct",
 
-	// Phase 3 registers the mutating agents; Phase 2 is what makes them safe to
-	// press. This one branches, commits, pushes and opens a draft PR, and it also
-	// holds mainBookkeeping. The leased worktree carries the target repo's own
-	// .claude/settings.local.json, which pre-approves `git push` and `gh pr`
-	// outright, so nothing but this hold stands between the button and a push.
-	disabled: {
-		reason: "Held until the Phase 2 sandbox or Phase 8 auth: it pushes branches and opens PRs, and the console has no auth or per-tier credentials yet.",
-	},
+	// No `disabled` here: the hold is computed from the environment (hold.ts). At
+	// `draft-pr` solo mode with the Docker sandbox releases it; with a tracker that
+	// writes externally the scope is `external-writes`, which has no sandbox profile
+	// yet and stays held. This one branches, commits, pushes and opens a draft PR,
+	// and it also holds mainBookkeeping; the leased worktree carries the target
+	// repo's own .claude/settings.local.json, which pre-approves `git push` and
+	// `gh pr` outright, so nothing but the sandbox stands between the button and a push.
 
 	args: [
 		{

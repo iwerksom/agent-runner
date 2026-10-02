@@ -154,11 +154,11 @@ DECISIONS #15 for why this is written down.
 
 ---
 
-## Running agents in the Docker sandbox (opt-in)
+## Running agents in the Docker sandbox, and solo mode
 
-Feature 2.1. Off unless `ARNOLD_SANDBOX=docker` is set, and `read-only`,
+Feature 2.1. The sandbox is off unless `ARNOLD_SANDBOX=docker` is set. `read-only`,
 `artifacts`, `working-tree`, `branch-push` and `draft-pr` agents have a profile;
-`external-writes` refuses to start sandboxed.
+`external-writes` does not and refuses to start sandboxed.
 
 1. Docker must work for your user (`docker run --rm hello-world`). In WSL, join the
    `docker` group and open a fresh session.
@@ -166,9 +166,23 @@ Feature 2.1. Off unless `ARNOLD_SANDBOX=docker` is set, and `read-only`,
 3. Start the console with the variable set: `ARNOLD_SANDBOX=docker pnpm dev`.
 
 Each run then executes the whole `claude` process in a container named
-`arnold-<runId>`: worktree and mirror read-only, an empty `HOME`, no credentials
-except the model key, read-only root filesystem, no capabilities. `docker ps`
-shows it while it runs. A read-only forge token for agents that use `gh` goes in
-`ARNOLD_GH_READ_TOKEN`. Pushing tiers need `ARNOLD_GH_PUSH_TOKEN` (or
+`arnold-<runId>`: worktree and mirror read-only (writable where the tier needs it),
+an empty `HOME`, no credentials except the model key, read-only root filesystem, no
+capabilities. `docker ps` shows it while it runs.
+
+**Releasing the held tiers on a single-user console.** Agents at `working-tree`,
+`branch-push` and `draft-pr` are held by default, on the agent card and at dispatch.
+Setting **both** `ARNOLD_SOLO=1` and `ARNOLD_SANDBOX=docker` releases them. The
+first run at a tier starts a canary self-test container; if it fails (image missing,
+a mount too wide) the tier stays held and the refusal says why. Never set
+`ARNOLD_SOLO=1` on a console other people can reach: the sandbox contains what an
+agent can do, not who may start it (that is Phase 8).
+
+Credentials: a read-only forge token for agents that use `gh` goes in
+`ARNOLD_GH_READ_TOKEN`; pushing tiers need `ARNOLD_GH_PUSH_TOKEN` (or
 `ARNOLD_GH_PUSH_TOKEN_<SLUG>` for one repo) and use `ARNOLD_GIT_NAME` and
-`ARNOLD_GIT_EMAIL` for commits; see DECISIONS #30 for where a push goes.
+`ARNOLD_GIT_EMAIL` for commits (DECISIONS #30).
+
+To restart a console you started in the background, kill both `next dev` and
+`next-server`: killing only one leaves the old server on the port, still running
+with the old environment.

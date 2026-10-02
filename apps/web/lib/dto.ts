@@ -17,6 +17,7 @@
 
 import {
 	effectiveExecution,
+	tierHold,
 	parseJsonColumn,
 	type AgentKind,
 	type AgentManifest,
@@ -416,6 +417,14 @@ function resolveNotRunnableReason(
 		return `Registry state is "${row.state}".`;
 	}
 	if (row.invocable === "child") return "Only runs as a child of another agent.";
+
+	// A tier that can change a repo is held unless solo mode and the sandbox release
+	// it. Computed here, per request, so changing the environment changes the card.
+	const hold = tierHold({
+		id: row.id,
+		writeScope: row.writeScope as AgentManifest["writeScope"],
+	});
+	if (hold !== undefined) return hold;
 
 	const declaredExecution = row.execution as ExecutionMode;
 	const relaxers = manifest.unattendedIfArgs ?? [];

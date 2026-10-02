@@ -29,15 +29,12 @@ export const manifest: AgentManifest = {
 	},
 	invocable: "direct",
 
-	// Phase 3 registers the mutating agents; Phase 2 is what makes them safe to
-	// press. Until roles gate triggering and credentials are mounted per tier,
-	// this writes to a real working tree from a console with no auth. The leased
-	// worktree also carries the target repo's own .claude/settings.local.json,
-	// which pre-approves git write commands, so "working-tree" is narrower in the
-	// manifest than in the environment the run actually gets.
-	disabled: {
-		reason: "Held until the Phase 2 sandbox or Phase 8 auth: it writes to the working tree, and the console has no auth or per-tier credentials yet.",
-	},
+	// No `disabled` here: the hold on a working-tree agent is computed from the
+	// environment (packages/core/src/hold.ts). Solo mode with the Docker sandbox
+	// releases it; otherwise it stays held. The leased worktree carries the target
+	// repo's own .claude/settings.local.json, which pre-approves git write commands,
+	// so "working-tree" is narrower in the manifest than in the environment the run
+	// would get without the sandbox, which is why it must not run without it.
 
 	args: [
 		{

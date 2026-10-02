@@ -45,7 +45,7 @@ export const manifest: AgentManifest = {
 	invocable: "direct",
 
 	disabled: {
-		reason: "Held until the Phase 2 sandbox or Phase 8 auth: files Jira issues and writes enhancement drafts, and the console has no auth or per-tier credentials yet.",
+		reason: "Held: it files Jira issues and writes enhancement drafts, which is external-writes, and that scope has no sandbox profile yet (Phase 2).",
 	},
 
 	args: [

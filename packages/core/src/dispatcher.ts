@@ -12,11 +12,13 @@ import type { Repo } from "@prisma/client";
 import { effectiveExecution, type AgentManifest } from "./agents.js";
 import { prisma } from "./db.js";
 import { BudgetError, ExecutionModeError, NotFoundError, ValidationError } from "./errors.js";
+import { requiresSandbox, tierHold } from "./hold.js";
 import { stringifyJsonColumn } from "./json.js";
 import { checkBudget } from "./ledger.js";
 import { preflightPromptValues, validateArgs } from "./prompt.js";
 import { getAgentWithManifest } from "./registry.js";
 import { runAgent } from "./runner.js";
+import { ensureSandboxSelfTest } from "./selftest.js";
 import { checkRepoRef, isSafeGitRef } from "./workspace.js";
 
 export type DispatchRunInput = {
@@ -149,6 +151,23 @@ export async function dispatchRun(input: DispatchRunInput): Promise<DispatchRunR
 			execution,
 			unattendedIfArgs: agentManifest.unattendedIfArgs ?? [],
 		});
+	}
+
+	// A tier that can change a repo is held unless solo mode and the sandbox release
+	// it (hold.ts), and even then only once a real container has proved the sandbox
+	// holds. Both refusals happen before a Run row exists.
+	const hold = tierHold(agentManifest);
+	if (hold !== undefined) {
+		throw new ExecutionModeError(hold, { agentId, writeScope: agentManifest.writeScope });
+	}
+	if (requiresSandbox(agentManifest.writeScope)) {
+		const selfTest = await ensureSandboxSelfTest(agentManifest.writeScope);
+		if (!selfTest.ok) {
+			throw new ExecutionModeError(
+				`the sandbox self-test failed for ${agentManifest.writeScope}, so it stays held: ${selfTest.failures.join("; ")}`,
+				{ agentId, writeScope: agentManifest.writeScope, failures: selfTest.failures },
+			);
+		}
 	}
 
 	const budgetCheck = await checkBudget(["global", `agent:${agentId}`], agentManifest.budget);
