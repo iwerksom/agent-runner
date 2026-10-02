@@ -150,3 +150,21 @@ browser-driven UI verification; it is bad at "run it and read the console".
 **For UI bugs, measure before theorising.** Build a fixture-data preview route,
 drive it with Playwright, and check element geometry and network calls. See
 DECISIONS #15 for why this is written down.
+
+---
+
+## Running agents in the Docker sandbox (opt-in)
+
+Feature 2.1. Off unless `ARNOLD_SANDBOX=docker` is set, and only `read-only` and
+`artifacts` agents have a profile; any other scope refuses to start sandboxed.
+
+1. Docker must work for your user (`docker run --rm hello-world`). In WSL, join the
+   `docker` group and open a fresh session.
+2. Build the image: `pnpm sandbox:build`.
+3. Start the console with the variable set: `ARNOLD_SANDBOX=docker pnpm dev`.
+
+Each run then executes the whole `claude` process in a container named
+`arnold-<runId>`: worktree and mirror read-only, an empty `HOME`, no credentials
+except the model key, read-only root filesystem, no capabilities. `docker ps`
+shows it while it runs. A read-only forge token for agents that use `gh` goes in
+`ARNOLD_GH_READ_TOKEN`.

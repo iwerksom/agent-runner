@@ -120,8 +120,9 @@ infrastructure.
 ## Phase 2: Sandbox and a hardened gate
 
 **Status: next.** The gate is mostly hardened; the sandbox is a Docker container
-(feature 2.1, DECISIONS #28) with its design waiting for a few decisions, and is
-not started.
+(feature 2.1, DECISIONS #28). The spike worked (DECISIONS #29) and `read-only`
+and `artifacts` run in it behind `ARNOLD_SANDBOX=docker`; the write tiers and the
+solo-mode release are next.
 
 One container profile per write scope, so a read-only run provably cannot read
 secrets, write or push, whatever the agent tries. The tool gate in

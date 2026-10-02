@@ -25,6 +25,7 @@ import { extractRunTicketKeys, extractTicketKeys } from "../packages/core/src/no
 import { preflightPromptValues, renderPrompt, validateArgs } from "../packages/core/src/prompt.js";
 import { gateAsPreToolUseHook } from "../packages/core/src/sdkAdapter.js";
 import { buildCanUseTool } from "../packages/core/src/writeScope.js";
+import { artifactDirOf, dockerArgs, profileFor, sandboxEnv } from "../packages/core/src/sandbox.js";
 import { registryManifestsBySlug } from "../registry/index.js";
 import { manifest as aiSmellScan } from "../registry/example-repo/ai-smell-scan.js";
 import { manifest as fixPrComments } from "../registry/example-repo/fix-pr-comments.js";
@@ -849,6 +850,109 @@ console.log(
 		await rm(work, { recursive: true, force: true });
 		await rm(outside, { recursive: true, force: true });
 	}
+}
+
+console.log("\n[20] sandbox profiles: what a container can see and keep (feature 2.1)");
+{
+	check(
+		"a glob names its directory",
+		artifactDirOf(".pr-loop/reports/PR-*-*.md") === ".pr-loop/reports",
+	);
+	check("a ** glob names its directory", artifactDirOf("out/**") === "out");
+	for (const bad of ["report.md", "*.md", "../x/*.md", "/abs/*.md"]) {
+		let refused = false;
+		try {
+			artifactDirOf(bad);
+		} catch {
+			refused = true;
+		}
+		check(`a glob that cannot be narrowed is refused: ${bad}`, refused);
+	}
+
+	const base = {
+		workspacePath: "/w/tree",
+		mirrorPath: "/w/mirror.git",
+		claudeExecutable: "/sdk/claude",
+	};
+	const readOnly = profileFor({
+		...base,
+		manifest: { ...scoper, writeScope: "read-only", artifactGlobs: [] },
+	});
+	check(
+		"read-only mounts nothing writable",
+		readOnly.mounts.every((m) => !m.writable),
+	);
+	check(
+		"read-only mounts the worktree, the mirror and the claude binary directory",
+		["/w/tree", "/w/mirror.git", "/sdk"].every((p) =>
+			readOnly.mounts.some((m) => m.host === p),
+		),
+	);
+	const artifacts = profileFor({
+		...base,
+		workspacePath: await mkdtemp(path.join(os.tmpdir(), "arnold-smoke-prof-")),
+		manifest: { ...scoper, writeScope: "artifacts", artifactGlobs: ["out/report-*.md"] },
+	});
+	check(
+		"artifacts mounts only the glob's directory writable",
+		artifacts.mounts.filter((m) => m.writable).length === 1 &&
+			artifacts.mounts.filter((m) => m.writable)[0]?.host.endsWith("/out") === true,
+	);
+	for (const scope of ["working-tree", "branch-push", "draft-pr", "external-writes"] as const) {
+		let refused = false;
+		try {
+			profileFor({ ...base, manifest: { ...scoper, writeScope: scope } });
+		} catch {
+			refused = true;
+		}
+		check(`no profile yet for ${scope}, so it cannot run sandboxed`, refused);
+	}
+
+	const env = sandboxEnv(readOnly, {
+		ANTHROPIC_API_KEY: "k",
+		CLAUDE_CODE_ENTRYPOINT: "sdk",
+		DATABASE_URL: "file:secret.db",
+		GITHUB_TOKEN: "t",
+		AWS_SECRET_ACCESS_KEY: "s",
+		HOME: "/home/jonas",
+	});
+	check(
+		"the model key and SDK variables are kept",
+		env.ANTHROPIC_API_KEY === "k" && env.CLAUDE_CODE_ENTRYPOINT === "sdk",
+	);
+	check(
+		"database url, tokens and cloud keys are not passed",
+		env.DATABASE_URL === undefined &&
+			env.GITHUB_TOKEN === undefined &&
+			env.AWS_SECRET_ACCESS_KEY === undefined,
+	);
+	check("HOME is the container's own", env.HOME === "/tmp/home");
+
+	const args = dockerArgs({
+		name: "arnold-x",
+		profile: readOnly,
+		cwd: "/w/tree",
+		envFile: "/tmp/e",
+		command: "/sdk/claude",
+		args: ["--print"],
+		uid: 1000,
+		gid: 1000,
+	}).join(" ");
+	for (const flag of [
+		"--read-only",
+		"--cap-drop ALL",
+		"no-new-privileges",
+		"--user 1000:1000",
+		"--pids-limit",
+		"--memory",
+		"-v /w/tree:/w/tree:ro",
+	]) {
+		check(`docker args include ${flag}`, args.includes(flag));
+	}
+	check(
+		"credentials go through --env-file, not -e",
+		args.includes("--env-file /tmp/e") && !/ -e /.test(args),
+	);
 }
 
 console.log(

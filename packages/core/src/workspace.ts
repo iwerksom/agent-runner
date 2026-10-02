@@ -42,7 +42,7 @@ export type LeaseWorkspaceInput = {
 // the default lives outside the repo) are in paths.ts.
 export { workspaceRoot };
 
-function mirrorPathFor(repoSlug: string): string {
+export function mirrorPathFor(repoSlug: string): string {
 	return path.join(workspaceRoot(), "mirrors", `${repoSlug}.git`);
 }
 

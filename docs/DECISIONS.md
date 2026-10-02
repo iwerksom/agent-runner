@@ -653,3 +653,39 @@ Code's `sandbox` setting alone, which covers only Bash commands and leaves the R
 tool and the hooks unconfined (it can still be an extra layer).
 
 The design is in `docs/features/2.1-sandbox-per-write-scope.md`.
+
+## 29. The Docker sandbox works through `spawnClaudeCodeProcess` (spike result)
+
+The spike for feature 2.1 (DECISIONS #28) ran `sandbox-doc-drift` end to end with
+the whole `claude` process in a container: `drift-found`, $0.25, 13 turns, and the
+container named for the run started and exited 0. Cancelling a run stops the
+container, and the run still records its cost.
+
+**What it took, and so what the design needs:**
+
+- The SDK accepts a custom spawner. `docker run -i` returns a `ChildProcess`,
+  which already satisfies `SpawnedProcess`, so the SDK's stdin and stdout protocol
+  passes straight through.
+- Three read-only mounts are enough for `read-only`: the worktree, the bare mirror
+  (git needs it), and the directory holding the `claude` binary. All at the same
+  absolute paths as on the host, so git worktree pointers and transcripts agree.
+- The binary is the SDK's native executable, dynamically linked against glibc, so
+  an Ubuntu 24.04 image runs it unchanged.
+- The environment is an allow-list: model auth and the SDK's own variables are
+  kept, and `DATABASE_URL`, tokens and cloud keys are not passed. `HOME` is a
+  per-run `tmpfs`, so `~/.ssh`, the `gh` login and `.env.local` do not exist for
+  the agent. Credentials travel in a mode-0600 `--env-file` that is deleted once the
+  container produces output.
+- An empty `HOME` also keeps the operator's user-level skills out of runs. The
+  slash-command list in the init event dropped from 51 to 43 entries, including
+  `artifact-capabilities`, `artifact-design` and `artifact-diagramming`. The two
+  runs were on different repos, so not every difference is a skill; this is
+  partial evidence for #15, not proof.
+
+**Gotcha:** finding the `claude` binary through `require.resolve` or
+`import.meta.url` fails inside the Next server, because the bundler rewrites both.
+The path is found on the file system from the repo root instead.
+
+**Still open:** profiles for `working-tree` and above (they throw, so they cannot
+run sandboxed by accident), the solo-mode release (#35) with a canary self-test,
+and network egress, which waits for the gateway (Phase 4).
