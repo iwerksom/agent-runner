@@ -2,9 +2,9 @@
 
 > Agent Runner, Notary, Orchestrator, Ledger, Dispatcher.
 >
-> The target architecture. What is built and what is known broken is in
-> `docs/HANDOVER.md`; what is built next, and in what order, is in
-> `docs/ROADMAP.md`; why each choice was made is in `docs/DECISIONS.md`. Worked
+> The target architecture. What is built, and what is built next in what
+> order, is in `docs/ROADMAP.md` (each phase carries a status); how to run it is
+> in `docs/RUNNING.md`; why each choice was made is in `docs/DECISIONS.md`. Worked
 > example agents are in `docs/reference-agents.md`, and how to add one in
 > `docs/adding-an-agent.md`.
 

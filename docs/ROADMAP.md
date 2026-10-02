@@ -20,9 +20,8 @@ it, without rewriting the shape.
 > in what order. Work is named by phase and by feature (`2.1` is the first feature
 > of Phase 2); the feature docs are in `docs/features/`, each with a user story and
 > its GitHub issues. `docs/architecture.md` is the target architecture,
-> `docs/DECISIONS.md` records why, and `docs/HANDOVER.md` holds the current build
-> state, including what is verified and what is known broken. None of them sets
-> the order.
+> `docs/DECISIONS.md` records why, and `docs/RUNNING.md` says how to run it and
+> what has been run. None of them sets the order.
 
 ---
 
@@ -31,7 +30,7 @@ it, without rewriting the shape.
 **Status: verified.** Five runs in August 2026 on the pre-genericization tree,
 three against ledtraad on 2026-09-12, and six against a throwaway sandbox repo on
 2026-10-01, the last on the tree as merged. Read-only and `artifacts` tiers only;
-see `docs/HANDOVER.md`.
+see `docs/RUNNING.md`.
 
 Single Next.js app, SQLite via Prisma, in-process execution, EventEmitter feeding
 SSE, no auth, no queue, no worker. Two non-mutating agents registered from repo
@@ -69,7 +68,7 @@ storage, scheduling, subagent trees, any mutating agent.
 
 - [0.1 One verified run on the current tree](features/0.1-verified-run-on-current-tree.md): Done (#10)
 - [0.2 Trace runs in MLflow](features/0.2-mlflow-tracing.md): Done (#11)
-- [0.3 Keep HANDOVER, README and ROADMAP current](features/0.3-docs-current.md): Done (#13)
+- [0.3 Keep the docs current](features/0.3-docs-current.md): Done (#13)
 
 ---
 
@@ -376,17 +375,22 @@ consumer role is vacant and its contract is already written.
 
 ---
 
-## Phase 8: Auth
+## Phase 8: Team use: auth and hosting
 
 **Status: not started; built once someone other than the author uses the
 console.** Until then the console stays on localhost.
 
 Auth.js against any OIDC provider (optional in solo mode). Viewer, operator,
-admin. Write scope gates triggering. Audit trail on every run.
+admin. Write scope gates triggering. Audit trail on every run. And a hosted
+deployment: for a team Arnold runs centrally (web, worker, Postgres and the
+gateway as one deployment, used in a browser), not as a database in one place
+and the app on each developer's machine, which would give every machine its own
+budget, queue and secrets.
 
 **Features**
 
 - [8.1 Auth, once someone other than the author uses it](features/8.1-auth.md): Planned (#25)
+- [8.2 Hosted team deployment](features/8.2-hosted-deployment.md): Planned (#57)
 
 **Acceptance criteria**
 
@@ -399,6 +403,9 @@ admin. Write scope gates triggering. Audit trail on every run.
   Arnold will clone and run agents against, so until this lands the console must
   not be exposed beyond localhost.
 - Every run records who triggered it.
+- A single `docker compose up` brings up web, worker, Postgres and the gateway;
+  solo mode is the same file with auth off (feature 8.2).
+- Backup and restore of Postgres and the artifact store are tested (feature 8.2).
 
 ---
 

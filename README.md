@@ -11,7 +11,7 @@ Point it at a checkout, write a manifest per agent, press Run.
 
 | Doc                                                    | What it is                                                                                 |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| [`docs/HANDOVER.md`](docs/HANDOVER.md)                 | **Start here.** What works today, what has run on which tree, and how to trace a run.      |
+| [`docs/RUNNING.md`](docs/RUNNING.md)                   | How to run and trace it, what has run on which tree, and the traps that cost time.         |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md)               | Why the code looks like this. Read before changing anything structural.                    |
 | [`docs/architecture.md`](docs/architecture.md)         | The target architecture: the shape, the contract an agent meets, and the runtime.          |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md)                   | The single source of truth: nine phases, build order, numbered features.                   |
@@ -181,7 +181,7 @@ every write scope the model supports:
 triggered.** The rest carry a `disabled` reason and are held in code until
 Phase 2 brings per-tier credentials and Phase 8 brings auth. There is still no auth, so anything
 reaching the port can trigger the ones that are runnable. See
-[`docs/HANDOVER.md`](docs/HANDOVER.md).
+[`docs/RUNNING.md`](docs/RUNNING.md).
 
 ## The thing worth understanding before adding an agent
 
