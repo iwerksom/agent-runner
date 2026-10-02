@@ -135,7 +135,7 @@ button.
 
 **Features**
 
-- [2.1 One container sandbox per write scope](features/2.1-sandbox-per-write-scope.md): Planned (#21, #35)
+- [2.1 One container sandbox per write scope](features/2.1-sandbox-per-write-scope.md): Done for its scope (#21, #35, #65)
 - [2.2 The gate refuses what it should, and nothing else](features/2.2-gate-hardening.md): In progress (#12, #14, #37, #27, #15)
 
 **Acceptance criteria**
@@ -160,7 +160,7 @@ button.
 - [x] The operator's account-provided skills do not load into sandboxed runs
       (unsandboxed runs still load them).
 - [ ] `external-writes` has a sandbox profile.
-- [ ] A push to GitHub from the sandbox with a real token has been done once.
+- [ ] A push to GitHub from the sandbox with a real token has been done once (#65).
 
 ---
 
@@ -182,7 +182,7 @@ other than the author uses the console (DECISIONS #26).
 
 **Features**
 
-- [3.1 Mutating agents on ledtraad](features/3.1-mutating-agents-on-ledtraad.md): Planned (#36, #26, #53)
+- [3.1 Mutating agents on ledtraad](features/3.1-mutating-agents-on-ledtraad.md): Planned (#36, #26, #53, #64)
 
 **Acceptance criteria**
 
