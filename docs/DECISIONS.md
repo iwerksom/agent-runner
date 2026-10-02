@@ -634,3 +634,22 @@ Renumbered 2026-10-02. Features follow their phase (`<phase>.<n>`).
 Old Phase 8 was added on 2026-10-02 for the harness spike and gateway, which
 until then lived only in `docs/architecture.md` Section 0. Old Phases 3 and 7
 split because their features were built at different times.
+
+## 28. The sandbox is a Docker container
+
+Roadmap feature 2.1 needs a boundary around each run: what the container can
+reach decides what the run can do (decision 22). Three backends were considered:
+bubblewrap around the `claude` process, a Docker container around it, and Claude
+Code's own `sandbox` setting.
+
+**Chosen:** Docker. It confines the Read tool, Bash and the repo's hooks alike,
+controls the network, and is the same sandbox the hosted deployment (feature 8.2)
+will run, so nothing built now is thrown away. The author also uses Docker
+professionally and wants the practice.
+
+**Rejected:** bubblewrap, which is lighter on a single Linux machine but would be
+replaced when Arnold is hosted and does not exist on macOS or Windows; and Claude
+Code's `sandbox` setting alone, which covers only Bash commands and leaves the Read
+tool and the hooks unconfined (it can still be an extra layer).
+
+The design is in `docs/features/2.1-sandbox-per-write-scope.md`.
