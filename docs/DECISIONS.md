@@ -695,3 +695,50 @@ cannot be narrowed to a directory.
 **Still open:** profiles for `working-tree` and above (they throw, so they cannot
 run sandboxed by accident), the solo-mode release (#35) with a canary self-test,
 and network egress, which waits for the gateway (Phase 4).
+
+## 30. Write tiers in the sandbox: what each can do to git, and where a push goes
+
+Feature 2.1, step 4: profiles for `working-tree`, `branch-push` and `draft-pr`.
+`external-writes` still has no profile and refuses to run sandboxed.
+
+**`working-tree`** mounts the worktree and the worktree's own git admin directory
+writable, and the rest of the mirror read-only. Edits, `git status` and `git log`
+work. `git add`, `git commit` and `git checkout -b` fail, because staging writes
+a blob object and a branch writes a ref, and both live in the mirror. So "no VCS
+operations" is enforced by the file system, not only by the gate, which has missed
+bypasses before (DECISIONS #22).
+
+**`branch-push` and `draft-pr`** mount the mirror writable too, so commits land,
+and add an identity for commits (`ARNOLD_GIT_NAME`, `ARNOLD_GIT_EMAIL`, default
+"Arnold"). The mirror is shared by every worktree of the repo, so a run at these
+tiers could disturb another run's refs; runs on one repo should not overlap at
+these tiers until the queue (Phase 5) serialises them.
+
+**Where a push goes.** Each mirror is cloned from the operator's local checkout,
+so its `origin` is a local path: that keeps Phase 0 runs network-free, but it means
+a plain `git push origin` lands in that checkout and never reaches GitHub. The
+sandbox therefore sets `remote.origin.pushurl` for the run, through git's
+environment configuration (nothing is written to disk), to the repo's real
+remote: a GitHub remote becomes its https URL, authenticated by a token through
+`gh`'s credential helper; a local-path remote is mounted writable (used by the
+smoke test and local-only repos). Any other remote has no profile. This applies
+only inside the sandbox; an unsandboxed run still pushes to the local checkout.
+`work-queue` (Phase 3) must run sandboxed for its pushes to mean anything.
+
+**Credentials.** The push token comes from `ARNOLD_GH_PUSH_TOKEN`, or
+`ARNOLD_GH_PUSH_TOKEN_<SLUG>` for one repo (a fine-grained token scoped to that
+repo is the intent). A GitHub remote with no token refuses to start, naming the
+variable. Read-only tiers never get it.
+
+**Verified:** smoke [22] runs real containers (a bare remote, a bare mirror and a
+worktree built like the runner builds them): at `working-tree` an edit lands, but
+`git add`, a commit and a new branch fail; at `branch-push` a branch, a commit
+and a push all work and the branch reaches the remote. A real agent also edited a
+file through the `Edit` tool in a `working-tree` container ($0.10, 4 turns).
+Writing the smoke test caught two mistakes of mine: a probe whose own redirection
+swallowed the command's (so an "edit works" check passed without writing
+anything), and `clone --mirror`, which sets a config the runner's mirrors do not
+have.
+
+**Not verified:** a push to GitHub over https with a real token (it needs a
+token, and a branch on a real repo).
