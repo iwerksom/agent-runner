@@ -45,13 +45,15 @@ The one property every phase must preserve:
 
 ## Documentation map
 
-| File                   | What it is                                                              |
-| ---------------------- | ----------------------------------------------------------------------- |
-| `README.md`            | How to run it, and the traps that bite on first setup                   |
-| `docs/architecture.md` | The target architecture.                                                |
-| `docs/DECISIONS.md`    | Why the code looks like this. Read before changing anything structural. |
-| `docs/ROADMAP.md`      | Eight phases with acceptance criteria                                   |
-| `docs/HANDOVER.md`     | This file: what actually works today                                    |
+| File                                                  | What it is                                                              |
+| ----------------------------------------------------- | ----------------------------------------------------------------------- |
+| `README.md`                                           | How to run it, and the traps that bite on first setup                   |
+| `docs/architecture.md`                                | The target architecture.                                                |
+| `docs/DECISIONS.md`                                   | Why the code looks like this. Read before changing anything structural. |
+| `docs/ROADMAP.md`                                     | The single source of truth: nine phases, build order, numbered features |
+| `docs/features/`                                      | One doc per feature: user story, issues, acceptance                     |
+| `docs/reference-agents.md`, `docs/adding-an-agent.md` | Worked-example agents, and how to add one                               |
+| `docs/HANDOVER.md`                                    | This file: what actually works today                                    |
 
 `packages/core/src/agents.ts` is the file to read first in the code. Everything
 else reads from it.

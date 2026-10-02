@@ -9,12 +9,14 @@ saw, and what it produced.
 
 Point it at a checkout, write a manifest per agent, press Run.
 
-| Doc                                            | What it is                                                                            |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------- |
-| [`docs/HANDOVER.md`](docs/HANDOVER.md)         | **Start here.** What works today, what has run on which tree, and how to trace a run. |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md)       | Why the code looks like this. Read before changing anything structural.               |
-| [`docs/architecture.md`](docs/architecture.md) | The target architecture: the shape, the contract an agent meets, and the runtime.   |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md)           | Eight phases with acceptance criteria.                                                |
+| Doc                                                    | What it is                                                                                 |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| [`docs/HANDOVER.md`](docs/HANDOVER.md)                 | **Start here.** What works today, what has run on which tree, and how to trace a run.      |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md)               | Why the code looks like this. Read before changing anything structural.                    |
+| [`docs/architecture.md`](docs/architecture.md)         | The target architecture: the shape, the contract an agent meets, and the runtime.          |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md)                   | The single source of truth: nine phases, build order, numbered features.                   |
+| [`docs/features/`](docs/features/)                     | One doc per feature: user story, issues, acceptance.                                       |
+| [`docs/reference-agents.md`](docs/reference-agents.md) | Worked-example agents. [`docs/adding-an-agent.md`](docs/adding-an-agent.md) is the how-to. |
 
 This repo is Phase 0: single app, SQLite, in-process execution, no auth.
 
