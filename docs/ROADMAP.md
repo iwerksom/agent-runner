@@ -170,6 +170,9 @@ Register `pre-pr-review` (`working-tree`), then `work-queue` (`draft-pr`), then
 `fix-pr-comments` (`external-writes`, `needs-human`) with the `awaiting_input`
 answer path.
 
+Feature 3.1 adds the existing agents to ledtraad one at a time, as the work in each
+phase unblocks them, and keeps the table of what each one is waiting for.
+
 **Note:** all five remaining reference manifests were registered early, during
 Phase 0, at the maintainer's request. So the manifests exist but the gating they
 assume does not. Treat this phase as "make the guarantees real", not "write the
@@ -182,10 +185,15 @@ other than the author uses the console (DECISIONS #26).
 
 **Features**
 
-- [3.1 Mutating agents on ledtraad](features/3.1-mutating-agents-on-ledtraad.md): Planned (#36, #26, #53, #64)
+- [3.1 Mutating agents on ledtraad](features/3.1-mutating-agents-on-ledtraad.md): Planned (#36, #26, #53, #64, #66)
 
 **Acceptance criteria**
 
+- Agents are added to ledtraad as the work in each phase unblocks them. Feature 3.1
+  keeps a table of every existing agent, its state and its blockers; an agent is
+  added when its last blocker closes, and not before.
+- The sandbox image can run ledtraad's own test and lint commands, so agents that
+  run a repo's commands can run there.
 - Every guardrail in each prompt body is encoded in its manifest, not just
   documented: no force-push, no PR base change, no ready-for-review, no merge.
 - A `work-queue` run records the branch it created and the draft PR it opened on
@@ -303,6 +311,7 @@ path on the host. Treat the remaining work as gating, not building.
 **Features**
 
 - [6.1 The registry lives in its own repository](features/6.1-registry-in-own-repository.md): Planned (#23, #16)
+- [6.2 Onboard a repo with existing agents](features/6.2-onboard-repo-with-agents.md): Planned, waits for 6.1 (#67)
 
 **Acceptance criteria**
 
