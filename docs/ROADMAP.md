@@ -119,7 +119,8 @@ infrastructure.
 
 ## Phase 2: Sandbox and a hardened gate
 
-**Status: next.** The gate is mostly hardened; the sandbox is not started.
+**Status: next.** The gate is mostly hardened; the sandbox has a design proposal
+(feature 2.1) waiting for decisions, and is not started.
 
 One container profile per write scope, so a read-only run provably cannot read
 secrets, write or push, whatever the agent tries. The tool gate in
