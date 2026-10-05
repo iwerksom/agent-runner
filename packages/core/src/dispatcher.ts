@@ -161,7 +161,7 @@ export async function dispatchRun(input: DispatchRunInput): Promise<DispatchRunR
 		throw new ExecutionModeError(hold, { agentId, writeScope: agentManifest.writeScope });
 	}
 	if (requiresSandbox(agentManifest.writeScope)) {
-		const selfTest = await ensureSandboxSelfTest(agentManifest.writeScope);
+		const selfTest = await ensureSandboxSelfTest(agentManifest.writeScope, repoRow.slug);
 		if (!selfTest.ok) {
 			throw new ExecutionModeError(
 				`the sandbox self-test failed for ${agentManifest.writeScope}, so it stays held: ${selfTest.failures.join("; ")}`,

@@ -23,7 +23,7 @@
 		"typecheck:offline": "node scripts/make-prisma-typestub.mjs && tsc -p tsconfig.verify.json --noEmit",
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
-		"sandbox:build": "docker build -t arnold-sandbox:dev sandbox/"
+		"sandbox:build": "node scripts/build-sandbox-images.mjs"
 	},
 	"dependencies": {
 		"@arnold/core": "workspace:*"
