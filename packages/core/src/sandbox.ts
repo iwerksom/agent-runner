@@ -38,6 +38,21 @@ export const SANDBOXED_SCOPES: readonly WriteScope[] = [
 
 export const SANDBOX_IMAGE = process.env.ARNOLD_SANDBOX_IMAGE ?? "arnold-sandbox:dev";
 
+/**
+ * The image a repo's runs execute in. A repo whose commands need a toolchain has a
+ * layer on the base image, declared by `sandbox/images/<slug>.Dockerfile` and built
+ * as `arnold-sandbox-<slug>:dev` (`pnpm sandbox:build`); every other repo gets the
+ * base image. `ARNOLD_SANDBOX_IMAGE` overrides the base only.
+ */
+export function sandboxImageFor(repoSlug: string | undefined): string {
+	if (repoSlug !== undefined && /^[a-z0-9][a-z0-9-]*$/.test(repoSlug)) {
+		if (existsSync(path.join(repoRoot(), "sandbox", "images", `${repoSlug}.Dockerfile`))) {
+			return `arnold-sandbox-${repoSlug}:dev`;
+		}
+	}
+	return SANDBOX_IMAGE;
+}
+
 export type SandboxMount = { host: string; container: string; writable: boolean };
 
 export type SandboxProfile = {
@@ -264,7 +279,7 @@ export function profileFor(input: ProfileInput): SandboxProfile {
 	}
 
 	return {
-		image: SANDBOX_IMAGE,
+		image: sandboxImageFor(input.repoSlug),
 		mounts,
 		envAllow: ENV_ALLOW,
 		envSet,
