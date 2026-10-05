@@ -46,8 +46,8 @@ export const manifest: AgentManifest = {
 
 	// No `disabled` here: the hold is computed from the environment (hold.ts). At
 	// `draft-pr` solo mode with the Docker sandbox releases it; with a tracker that
-	// writes externally the scope is `external-writes`, which has no sandbox profile
-	// yet and stays held. This one branches, commits, pushes and opens a draft PR,
+	// writes externally the scope is `external-writes`, which solo mode releases the
+	// same way (DECISIONS #32). This one branches, commits, pushes and opens a draft PR,
 	// and it also holds mainBookkeeping; the leased worktree carries the target
 	// repo's own .claude/settings.local.json, which pre-approves `git push` and
 	// `gh pr` outright, so nothing but the sandbox stands between the button and a push.

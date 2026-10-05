@@ -794,3 +794,26 @@ load them.
 `work-queue` bound to the GitHub tracker declares `external-writes` (it edits issue
 labels), so it stays held. Releasing it needs a profile with a tracker token, or the
 tracker binding classified differently.
+
+## 32. `external-writes` is the `draft-pr` profile with a tracker token
+
+Phase 2, feature 2.1, issue #64. Decision: give `external-writes` a profile rather
+than reclassify the GitHub tracker binding. A label edit is a write to the tracker,
+outside the repo, and the scope should say so; hiding it at `draft-pr` would let
+that tier edit issues.
+
+**The profile** (`packages/core/src/sandbox.ts`) is `draft-pr`'s: writable worktree
+and mirror, pushes to the repo's real remote, a git identity. The difference is the
+token. `external-writes` takes `ARNOLD_GH_EXTERNAL_TOKEN` (or `_<SLUG>`), which may
+also edit issues and pull requests, and falls back to the push token. `branch-push`
+and `draft-pr` read only the push token, so a token with tracker reach never enters
+a tier that has no use for it.
+
+**Released the same way** as the other tiers: solo mode with the sandbox and a
+passing canary self-test (#31). Smoke [20] checks the token choice, [13] the hold;
+[23] runs the self-test for the tier. The Jira binding is not covered: the sandbox
+carries no Jira credentials, so a Jira-synced agent would fail, not leak.
+`fix-pr-comments` keeps its own hold (the `awaiting_input` answer path).
+
+**Not done:** the profile has not been tried against GitHub with a real token (#65),
+and `work-queue` on ledtraad still waits for the other Phase 3 blockers (#26, #53).

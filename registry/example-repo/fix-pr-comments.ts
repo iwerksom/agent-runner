@@ -43,7 +43,7 @@ export const manifest: AgentManifest = {
 	// the relaxation that makes it headless would silently make it pressable. The
 	// hold is stated outright so removing it has to be deliberate.
 	disabled: {
-		reason: "Held: it needs the answer path for `awaiting_input` (Phase 3) and an external-writes sandbox profile, which does not exist yet (Phase 2).",
+		reason: "Held: it needs the answer path for `awaiting_input` (Phase 3).",
 	},
 
 	args: [

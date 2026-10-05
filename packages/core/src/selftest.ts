@@ -141,7 +141,8 @@ export async function runSandboxSelfTest(
 		);
 
 		const ssh = path.join(os.homedir(), ".ssh");
-		const pushes = scope === "branch-push" || scope === "draft-pr";
+		const pushes =
+			scope === "branch-push" || scope === "draft-pr" || scope === "external-writes";
 		const lines = [
 			probe("canary-read", `cat ${canary}/secret.txt`),
 			probe("canary-list", `ls -A ${canary}`),
