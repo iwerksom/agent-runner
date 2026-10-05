@@ -185,7 +185,7 @@ other than the author uses the console (DECISIONS #26).
 
 **Features**
 
-- [3.1 Mutating agents on ledtraad](features/3.1-mutating-agents-on-ledtraad.md): Planned (#36, #26, #53, #64, #66)
+- [3.1 Mutating agents on ledtraad](features/3.1-mutating-agents-on-ledtraad.md): Planned (#36, #26, #66; #53 and #64 done)
 
 **Acceptance criteria**
 
