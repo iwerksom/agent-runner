@@ -157,8 +157,11 @@ DECISIONS #15 for why this is written down.
 ## Running agents in the Docker sandbox, and solo mode
 
 Feature 2.1. The sandbox is off unless `ARNOLD_SANDBOX=docker` is set. `read-only`,
-`artifacts`, `working-tree`, `branch-push` and `draft-pr` agents have a profile;
-`external-writes` does not and refuses to start sandboxed.
+`artifacts`, `working-tree`, `branch-push`, `draft-pr` and `external-writes` agents
+have a profile. `branch-push` and above need a forge token: `ARNOLD_GH_PUSH_TOKEN`
+(or `ARNOLD_GH_PUSH_TOKEN_<SLUG>` for one repo); `external-writes` prefers
+`ARNOLD_GH_EXTERNAL_TOKEN` (or `_<SLUG>`), a token that also covers issues and pull
+requests, and falls back to the push token.
 
 1. Docker must work for your user (`docker run --rm hello-world`). In WSL, join the
    `docker` group and open a fresh session.

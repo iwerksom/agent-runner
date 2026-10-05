@@ -119,11 +119,11 @@ infrastructure.
 
 ## Phase 2: Sandbox and a hardened gate
 
-**Status: built; two gaps remain.** The sandbox is a Docker container (feature 2.1,
+**Status: built; one gap remains.** The sandbox is a Docker container (feature 2.1,
 DECISIONS #28 to #31): `read-only`, `artifacts`, `working-tree`, `branch-push` and
 `draft-pr` run in it, and solo mode (`ARNOLD_SOLO=1` with `ARNOLD_SANDBOX=docker`)
-releases the three that can change a repo, gated by a canary self-test. Gaps:
-`external-writes` has no profile, and a push to GitHub with a real token has not
+releases the four that can change a repo (`external-writes` included, DECISIONS
+#32), gated by a canary self-test. Gap: a push to GitHub with a real token has not
 been tried.
 
 One container profile per write scope, so a read-only run provably cannot read
@@ -159,7 +159,7 @@ button.
       secrets.
 - [x] The operator's account-provided skills do not load into sandboxed runs
       (unsandboxed runs still load them).
-- [ ] `external-writes` has a sandbox profile.
+- [x] `external-writes` has a sandbox profile (DECISIONS #32).
 - [ ] A push to GitHub from the sandbox with a real token has been done once (#65).
 
 ---

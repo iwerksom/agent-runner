@@ -592,8 +592,9 @@ console.log(
 		}
 	}
 	check(
-		"external-writes is never released by solo mode",
-		tierHold({ id: "x", writeScope: "external-writes" }, solo) !== undefined,
+		"external-writes is released by solo mode only with the sandbox",
+		tierHold({ id: "x", writeScope: "external-writes" }, solo) === undefined &&
+			tierHold({ id: "x", writeScope: "external-writes" }, soloOnly) !== undefined,
 	);
 	for (const scope of ["working-tree", "branch-push", "draft-pr"] as const) {
 		check(
@@ -966,7 +967,7 @@ console.log("\n[20] sandbox profiles: what a container can see and keep (feature
 		} catch {
 			refused = true;
 		}
-		check("no profile yet for external-writes, so it cannot run sandboxed", refused);
+		check("external-writes without a remote to push to is refused", refused);
 	}
 	{
 		// working-tree needs a real worktree pointer to find its git admin directory.
@@ -1051,6 +1052,39 @@ console.log("\n[20] sandbox profiles: what a container can see and keep (feature
 			"draft-pr: the mirror is writable",
 			dp.mounts.some((m) => m.host === "/w/mirror.git" && m.writable),
 		);
+		const savedExt = process.env.ARNOLD_GH_EXTERNAL_TOKEN;
+		const ghRemote = "git@github.com:iwerksom/ledtraad.git";
+		const ewManifest = { ...scoper, writeScope: "external-writes" as const };
+		delete process.env.ARNOLD_GH_EXTERNAL_TOKEN;
+		const ewFallback = profileFor({
+			...base,
+			repoSlug: "ledtraad",
+			remoteUrl: ghRemote,
+			manifest: ewManifest,
+		});
+		check("external-writes falls back to the push token", ewFallback.envSet.GH_TOKEN === "tok");
+		process.env.ARNOLD_GH_EXTERNAL_TOKEN = "ext";
+		const ew = profileFor({
+			...base,
+			repoSlug: "ledtraad",
+			remoteUrl: ghRemote,
+			manifest: ewManifest,
+		});
+		check("external-writes prefers the tracker token", ew.envSet.GH_TOKEN === "ext");
+		check(
+			"external-writes: mirror writable, pushes to the real remote",
+			ew.mounts.some((m) => m.host === "/w/mirror.git" && m.writable) &&
+				ew.envSet.GIT_CONFIG_VALUE_0 === "https://github.com/iwerksom/ledtraad.git",
+		);
+		const dpAgain = profileFor({
+			...base,
+			repoSlug: "ledtraad",
+			remoteUrl: ghRemote,
+			manifest: { ...scoper, writeScope: "draft-pr" },
+		});
+		check("draft-pr never gets the tracker token", dpAgain.envSet.GH_TOKEN === "tok");
+		if (savedExt === undefined) delete process.env.ARNOLD_GH_EXTERNAL_TOKEN;
+		else process.env.ARNOLD_GH_EXTERNAL_TOKEN = savedExt;
 		const ro = profileFor({
 			...base,
 			manifest: { ...scoper, writeScope: "read-only", artifactGlobs: [] },
@@ -1411,6 +1445,7 @@ console.log(
 			"working-tree",
 			"branch-push",
 			"draft-pr",
+			"external-writes",
 		] as const) {
 			const result = await runSandboxSelfTest(scope);
 			check(`self-test passes for ${scope}`, result.ok, result.failures.join("; "));

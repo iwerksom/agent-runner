@@ -9,9 +9,10 @@
  * all confined, not just shell commands. What the container cannot see, the agent
  * cannot read, whatever it tries and whatever the tool gate misses.
  *
- * `read-only`, `artifacts`, `working-tree`, `branch-push` and `draft-pr` have a
- * profile. `external-writes` throws from `profileFor`, so a tier without a profile
- * cannot run sandboxed by accident.
+ * Every write scope has a profile. `external-writes` is the `draft-pr` profile with
+ * a tracker token (issue edits, PR comments) in place of the push token, so a scope
+ * added later without a profile throws from `profileFor` rather than running
+ * sandboxed by accident.
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -25,13 +26,14 @@ import { ValidationError } from "./errors.js";
 import { githubRepoFromRemote } from "./filing.js";
 import { repoRoot } from "./paths.js";
 
-/** The write scopes that have a sandbox profile. `external-writes` does not yet. */
+/** The write scopes that have a sandbox profile. */
 export const SANDBOXED_SCOPES: readonly WriteScope[] = [
 	"read-only",
 	"artifacts",
 	"working-tree",
 	"branch-push",
 	"draft-pr",
+	"external-writes",
 ];
 
 export const SANDBOX_IMAGE = process.env.ARNOLD_SANDBOX_IMAGE ?? "arnold-sandbox:dev";
@@ -116,22 +118,36 @@ export function gitAdminDirOf(workspacePath: string): string {
 	return path.resolve(workspacePath, match[1]);
 }
 
-/** The push token for a repo: `ARNOLD_GH_PUSH_TOKEN_<SLUG>` first, then the shared one. */
-function pushTokenFor(repoSlug: string | undefined): string | undefined {
+/** `<PREFIX>_<SLUG>` first, then `<PREFIX>`, so one repo can have its own token. */
+function tokenFor(prefix: string, repoSlug: string | undefined): string | undefined {
 	const specific =
 		repoSlug === undefined
 			? undefined
-			: process.env[
-					`ARNOLD_GH_PUSH_TOKEN_${repoSlug.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`
-				];
-	const token = specific ?? process.env.ARNOLD_GH_PUSH_TOKEN;
+			: process.env[`${prefix}_${repoSlug.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`];
+	const token = specific ?? process.env[prefix];
 	return token === undefined || token === "" ? undefined : token;
+}
+
+/**
+ * The forge token for a pushing tier. `external-writes` edits issues and comments,
+ * so it prefers `ARNOLD_GH_EXTERNAL_TOKEN`, scoped to issues and pull requests, and
+ * falls back to the push token; the push tiers use only the push token, so a token
+ * with tracker reach never reaches a tier that has no use for it.
+ */
+function forgeTokenFor(scope: WriteScope, repoSlug: string | undefined): string | undefined {
+	if (scope === "external-writes") {
+		return (
+			tokenFor("ARNOLD_GH_EXTERNAL_TOKEN", repoSlug) ??
+			tokenFor("ARNOLD_GH_PUSH_TOKEN", repoSlug)
+		);
+	}
+	return tokenFor("ARNOLD_GH_PUSH_TOKEN", repoSlug);
 }
 
 export function profileFor(input: ProfileInput): SandboxProfile {
 	const { manifest, workspacePath, mirrorPath, claudeExecutable } = input;
 	const scope = manifest.writeScope;
-	if (scope === "external-writes") {
+	if (!SANDBOXED_SCOPES.includes(scope)) {
 		throw new ValidationError(
 			`no sandbox profile for write scope ${scope} yet (agent ${manifest.id})`,
 			{ agentId: manifest.id, writeScope: scope },
@@ -178,7 +194,7 @@ export function profileFor(input: ProfileInput): SandboxProfile {
 			{ host: claudeDir, container: claudeDir, writable: false },
 		];
 	} else {
-		// branch-push and draft-pr: commits and pushes. The mirror is writable so
+		// branch-push, draft-pr and external-writes: commits and pushes. The mirror is writable so
 		// commits can land, and a push goes to the repo's real remote (see
 		// `pushTargetOf`), authenticated by a token that exists for this tier only.
 		if (input.remoteUrl === undefined) {
@@ -201,10 +217,15 @@ export function profileFor(input: ProfileInput): SandboxProfile {
 		];
 		const gitConfig: [string, string][] = [];
 		if (target.kind === "https") {
-			const token = pushTokenFor(input.repoSlug);
+			const token = forgeTokenFor(scope, input.repoSlug);
 			if (token === undefined) {
+				const slug = (input.repoSlug ?? "REPO").toUpperCase().replace(/[^A-Z0-9]/g, "_");
+				const names =
+					scope === "external-writes"
+						? `ARNOLD_GH_EXTERNAL_TOKEN or ARNOLD_GH_PUSH_TOKEN (or ..._${slug} for this repo only)`
+						: `ARNOLD_GH_PUSH_TOKEN, or ARNOLD_GH_PUSH_TOKEN_${slug} for this repo only`;
 				throw new ValidationError(
-					`write scope ${scope} (agent ${manifest.id}) needs a push token: set ARNOLD_GH_PUSH_TOKEN, or ARNOLD_GH_PUSH_TOKEN_${(input.repoSlug ?? "REPO").toUpperCase().replace(/[^A-Z0-9]/g, "_")} for this repo only`,
+					`write scope ${scope} (agent ${manifest.id}) needs a forge token: set ${names}`,
 					{ agentId: manifest.id },
 				);
 			}
@@ -224,7 +245,7 @@ export function profileFor(input: ProfileInput): SandboxProfile {
 		envSet.GIT_TERMINAL_PROMPT = "0";
 	}
 
-	if (scope === "working-tree" || scope === "branch-push" || scope === "draft-pr") {
+	if (scope !== "read-only" && scope !== "artifacts") {
 		// Commits need an identity; without one git refuses.
 		const name = process.env.ARNOLD_GIT_NAME ?? "Arnold";
 		const email = process.env.ARNOLD_GIT_EMAIL ?? "arnold@localhost";
