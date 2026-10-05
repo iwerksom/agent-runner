@@ -817,3 +817,19 @@ carries no Jira credentials, so a Jira-synced agent would fail, not leak.
 
 **Not done:** the profile has not been tried against GitHub with a real token (#65),
 and `work-queue` on ledtraad still waits for the other Phase 3 blockers (#26, #53).
+
+## 33. A repo's toolchain is a layer on the base sandbox image
+
+Phase 3, feature 3.1, issue #66. Decision: a layer per repo (`sandbox/images/<slug>.Dockerfile`
+-> `arnold-sandbox-<slug>:dev`) rather than one fat image or a toolchain installed at run
+time. One fat image would carry every repo's dependencies into every run; installing at run
+time needs network and a writable root, which the profiles exist to deny.
+
+`sandboxImageFor(slug)` chooses the image, so a repo with no layer is unchanged. The self-test
+now takes the repo and tests that image (the dispatcher passes it), because a layer is a
+different container from the base. `pnpm sandbox:build` builds the base, then every layer.
+
+ledtraad's layer matches its static CI job, and `ledtraad-pre-pr-review` is bound to it with
+an allow-list of exactly those commands (the example agent's names `tsc`, `vitest`, `eslint`).
+Not covered: the corpus, `.venv` and torch stack, so corpus-dependent checks are reported as
+not run. Not done: a first real run of the agent on a ledtraad branch.

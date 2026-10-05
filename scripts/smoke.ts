@@ -35,6 +35,7 @@ import {
 	pushTargetOf,
 	resolveClaudeExecutable,
 	sandboxEnv,
+	sandboxImageFor,
 } from "../packages/core/src/sandbox.js";
 import { runSandboxSelfTest } from "../packages/core/src/selftest.js";
 import { registryManifestsBySlug } from "../registry/index.js";
@@ -1085,6 +1086,21 @@ console.log("\n[20] sandbox profiles: what a container can see and keep (feature
 		check("draft-pr never gets the tracker token", dpAgain.envSet.GH_TOKEN === "tok");
 		if (savedExt === undefined) delete process.env.ARNOLD_GH_EXTERNAL_TOKEN;
 		else process.env.ARNOLD_GH_EXTERNAL_TOKEN = savedExt;
+		check(
+			"a repo with a layer runs in it; others run in the base image",
+			sandboxImageFor("ledtraad") === "arnold-sandbox-ledtraad:dev" &&
+				sandboxImageFor("some-other-repo") === sandboxImageFor(undefined) &&
+				sandboxImageFor("../etc") === sandboxImageFor(undefined),
+		);
+		const ledtraadPre = (registryManifestsBySlug.ledtraad ?? []).find(
+			(m) => m.id === "ledtraad-pre-pr-review",
+		);
+		check(
+			"ledtraad's pre-pr-review is working-tree and names Python commands, not Node ones",
+			ledtraadPre?.writeScope === "working-tree" &&
+				ledtraadPre.tools.allowedTools.some((t) => t.startsWith("Bash(pyflakes")) &&
+				!ledtraadPre.tools.allowedTools.some((t) => /npx|npm|vitest/.test(t)),
+		);
 		const ro = profileFor({
 			...base,
 			manifest: { ...scoper, writeScope: "read-only", artifactGlobs: [] },
@@ -1449,6 +1465,35 @@ console.log(
 		] as const) {
 			const result = await runSandboxSelfTest(scope);
 			check(`self-test passes for ${scope}`, result.ok, result.failures.join("; "));
+		}
+		// A repo's layer is a different container, so it gets its own self-test, and
+		// it must carry the toolchain the repo's agent allow-list names.
+		if (
+			spawnSync("docker", ["image", "inspect", sandboxImageFor("ledtraad")], {
+				stdio: "ignore",
+			}).status !== 0
+		) {
+			console.log("  SKIP  the ledtraad layer is not built (run: pnpm sandbox:build)");
+		} else {
+			const layered = await runSandboxSelfTest("working-tree", { repoSlug: "ledtraad" });
+			check(
+				"self-test passes on the ledtraad image",
+				layered.ok,
+				layered.failures.join("; "),
+			);
+			const tools = spawnSync(
+				"docker",
+				[
+					"run",
+					"--rm",
+					sandboxImageFor("ledtraad"),
+					"sh",
+					"-c",
+					"python --version && pyflakes --version",
+				],
+				{ encoding: "utf8" },
+			);
+			check("the ledtraad image has python and pyflakes", tools.status === 0, tools.stderr);
 		}
 		// A test that cannot fail proves nothing: widen a mount so the canary is
 		// reachable, and the self-test must catch it.
