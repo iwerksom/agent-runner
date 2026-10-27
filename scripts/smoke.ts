@@ -1131,6 +1131,10 @@ console.log("\n[20] sandbox profiles: what a container can see and keep (feature
 			env.AWS_SECRET_ACCESS_KEY === undefined,
 	);
 	check("HOME is the container's own", env.HOME === "/tmp/home");
+	check(
+		"PATH is the image's: neither the profile nor the host sets it (#74)",
+		env.PATH === undefined && readOnly.envSet.PATH === undefined,
+	);
 
 	const args = dockerArgs({
 		name: "arnold-x",
@@ -1494,6 +1498,24 @@ console.log(
 				{ encoding: "utf8" },
 			);
 			check("the ledtraad image has python and pyflakes", tools.status === 0, tools.stderr);
+			// The check above runs the image directly, which is how #74 got through: a
+			// profile that set PATH replaced the layer's. The self-test above runs the
+			// real profile, and it must catch that override.
+			const pathOverridden = await runSandboxSelfTest("working-tree", {
+				repoSlug: "ledtraad",
+				tamper: (profile) => ({
+					...profile,
+					envSet: {
+						...profile.envSet,
+						PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+					},
+				}),
+			});
+			check(
+				"self-test fails when the profile overrides the image's PATH",
+				!pathOverridden.ok && pathOverridden.failures.some((f) => f.startsWith("path:")),
+				JSON.stringify(pathOverridden.failures),
+			);
 		}
 		// A test that cannot fail proves nothing: widen a mount so the canary is
 		// reachable, and the self-test must catch it.
