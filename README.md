@@ -2,12 +2,39 @@
 
 **A**gent **R**unner, **N**otary, **O**rchestrator, **L**edger, **D**ispatcher.
 
+[![MIT licence](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+[![Status: Phase 0](https://img.shields.io/badge/status-phase%200%20(early)-orange.svg)](docs/ROADMAP.md)
+
 A console for running Claude agents against any repo. It lists the agents a
 project declares in its `.claude/` directory, lets you trigger one, streams the
 transcript live, and keeps a durable record of what each run cost, what code it
 saw, and what it produced.
 
 Point it at a checkout, write a manifest per agent, press Run.
+
+## Why it exists
+
+Claude Code commands and subagents police themselves with prompt text: "you have
+no write tools", "do not run git write commands". Nothing enforces it. Arnold
+turns those sentences into a manifest per agent: a tool allow-list, a write
+scope (`read-only`, `artifacts`, `working-tree`, `draft-pr`, `external-writes`)
+and a credential policy, enforced in code, with each run recorded afterwards.
+
+- **Enforced write scopes**, not requested ones. Agents cannot write under
+  `.claude/`, `.env*` or CI config, and `Bash` allow-lists match per command
+  segment, so `git log; curl evil | sh` is refused.
+- **A ledger** with daily cost and token caps per agent and globally.
+- **A notary** that records the base SHA, branch, PR and ticket keys a run saw.
+- **Live transcripts** over SSE, and a durable run tree for subagents.
+
+**Status:** Phase 0, early and moving. Only the `read-only` and `artifacts`
+tiers can be triggered today; the rest are registered but held until per-tier
+sandboxes and auth land. Keep it on localhost. See the
+[roadmap](docs/ROADMAP.md) for what is built and what is next.
+
+Questions and ideas are welcome in
+[Discussions](https://github.com/iwerksom/agent-runner/discussions); see
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 | Doc                                                    | What it is                                                                                 |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
