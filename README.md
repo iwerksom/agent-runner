@@ -3,7 +3,7 @@
 **A**gent **R**unner, **N**otary, **O**rchestrator, **L**edger, **D**ispatcher.
 
 [![MIT licence](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
-[![Status: Phase 0](https://img.shields.io/badge/status-phase%200%20(early)-orange.svg)](docs/ROADMAP.md)
+[![Status: Phase 0](<https://img.shields.io/badge/status-phase%200%20(early)-orange.svg>)](docs/ROADMAP.md)
 
 A console for running Claude agents against any repo. It lists the agents a
 project declares in its `.claude/` directory, lets you trigger one, streams the
