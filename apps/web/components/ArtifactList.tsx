@@ -16,6 +16,7 @@ import { Download, FileText, Paperclip, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { Markdown } from "@/components/Markdown";
+import { PatchPanel } from "@/components/PatchPanel";
 import { RelativeTime } from "@/components/RelativeTime";
 import { formatBytes } from "@/components/format";
 import { useArtifactText } from "@/hooks/useArtifactText";
@@ -89,11 +90,16 @@ export function ArtifactList({
 		);
 	}
 
-	const markdownArtifacts = artifactListArtifacts.filter(isMarkdown);
-	const otherArtifacts = artifactListArtifacts.filter((artifact) => !isMarkdown(artifact));
+	const patchArtifacts = artifactListArtifacts.filter((artifact) => artifact.kind === "patch");
+	const fileArtifacts = artifactListArtifacts.filter((artifact) => artifact.kind !== "patch");
+	const markdownArtifacts = fileArtifacts.filter(isMarkdown);
+	const otherArtifacts = fileArtifacts.filter((artifact) => !isMarkdown(artifact));
 
 	return (
 		<div className="flex flex-col gap-3">
+			{patchArtifacts.map((artifact) => (
+				<PatchPanel key={artifact.id} patchPanelArtifact={artifact} />
+			))}
 			{markdownArtifacts.length > 0 ? (
 				<Accordion
 					variant="bordered"

@@ -188,6 +188,8 @@ model Artifact {
   storageKey String
   mimeType   String @default("text/plain")
   sizeBytes  Int
+  /// Set when a `patch` artifact was applied to the repo's checkout (feature 3.2).
+  appliedAt  DateTime?
 
   createdAt DateTime @default(now())
 
