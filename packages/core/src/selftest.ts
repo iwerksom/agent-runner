@@ -74,6 +74,24 @@ async function git(cwd: string, ...args: string[]): Promise<void> {
 	});
 }
 
+/** The `PATH` the image declares, or undefined when it declares none. */
+function imagePathOf(image: string): string | undefined {
+	const inspected = spawnSync(
+		"docker",
+		["image", "inspect", "--format", "{{json .Config.Env}}", image],
+		{ encoding: "utf8" },
+	);
+	if (inspected.status !== 0) return undefined;
+	try {
+		const env: unknown = JSON.parse(inspected.stdout);
+		if (!Array.isArray(env)) return undefined;
+		const entry = env.find((e) => typeof e === "string" && e.startsWith("PATH="));
+		return typeof entry === "string" ? entry.slice("PATH=".length) : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 /** A subshell, so a redirection inside the command cannot swallow the probe's own. */
 function probe(name: string, command: string): string {
 	return `( ${command} ) >/dev/null 2>&1 && echo "${name}=yes" || echo "${name}=no"`;
@@ -160,6 +178,7 @@ export async function runSandboxSelfTest(
 			probe("root-fs", "touch /etc/x"),
 			probe("tree-write", `touch ${tree}/new-file`),
 			`echo "uid=$(id -u)"`,
+			`echo "path=$PATH"`,
 			`echo "secret-vars=$(env | grep -c '^DATABASE_URL=\\|^GITHUB_TOKEN=')"`,
 		];
 		if (scope === "artifacts") lines.push(probe("out-write", `touch ${tree}/out/ok.md`));
@@ -218,6 +237,15 @@ export async function runSandboxSelfTest(
 		expect("secret-vars", "0", "no database URL or token may be in the environment");
 		if (seen.get("uid") !== String(uid) || uid === 0)
 			failures.push("uid: must be the host user, not root");
+		// A run's process must see the image's own PATH, or a repo's toolchain layer
+		// is in the image and not on the path (#74).
+		const imagePath = imagePathOf(image);
+		if (imagePath !== undefined)
+			expect(
+				"path",
+				imagePath,
+				"the container must keep the image's PATH, not one set by the profile",
+			);
 
 		if (scope === "read-only" || scope === "artifacts")
 			expect("tree-write", "no", "the worktree is read-only");

@@ -169,9 +169,13 @@ export function profileFor(input: ProfileInput): SandboxProfile {
 		);
 	}
 	const claudeDir = path.dirname(claudeExecutable);
+	// No PATH here on purpose. It is the image's: a repo's toolchain layer puts its
+	// own directory first (ledtraad's `/opt/venv/bin`), and setting PATH from here
+	// replaced it, so `python` and `pyflakes` were "command not found" in a run
+	// although the image had them. The host's PATH never reaches the container
+	// either, because `ENV_ALLOW` does not pass it (#74).
 	const envSet: Record<string, string> = {
 		HOME: "/tmp/home",
-		PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 	};
 	// Same absolute paths inside and outside: a git worktree records absolute paths
 	// to its admin directory, and transcripts and provenance must agree on where
