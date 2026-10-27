@@ -28,6 +28,7 @@ import {
 	profileFor,
 	resolveClaudeExecutable,
 	sandboxEnv,
+	sandboxImageFor,
 	type SandboxProfile,
 } from "./sandbox.js";
 
@@ -37,16 +38,21 @@ export type SelfTestResult = { ok: boolean; failures: string[]; at: number };
 
 const PASS_TTL_MS = 15 * 60_000;
 const FAIL_TTL_MS = 60_000;
-const cache = new Map<WriteScope, SelfTestResult>();
+const cache = new Map<string, SelfTestResult>();
 
 /** The cached result when fresh, otherwise a new run. */
-export async function ensureSandboxSelfTest(scope: WriteScope): Promise<SelfTestResult> {
-	const cached = cache.get(scope);
+export async function ensureSandboxSelfTest(
+	scope: WriteScope,
+	repoSlug?: string,
+): Promise<SelfTestResult> {
+	// Per image: a repo's layer is a different container from the base.
+	const key = `${scope}:${sandboxImageFor(repoSlug)}`;
+	const cached = cache.get(key);
 	if (cached !== undefined && Date.now() - cached.at < (cached.ok ? PASS_TTL_MS : FAIL_TTL_MS)) {
 		return cached;
 	}
-	const result = await runSandboxSelfTest(scope);
-	cache.set(scope, result);
+	const result = await runSandboxSelfTest(scope, { repoSlug });
+	cache.set(key, result);
 	return result;
 }
 
@@ -75,18 +81,19 @@ function probe(name: string, command: string): string {
 
 export async function runSandboxSelfTest(
 	scope: WriteScope,
-	options: { tamper?: (profile: SandboxProfile) => SandboxProfile } = {},
+	options: {
+		tamper?: (profile: SandboxProfile) => SandboxProfile;
+		/** Test the image this repo's runs use, not the base. */
+		repoSlug?: string;
+	} = {},
 ): Promise<SelfTestResult> {
 	const failures: string[] = [];
 	const finish = (): SelfTestResult => ({ ok: failures.length === 0, failures, at: Date.now() });
 
-	const docker = spawnSync("docker", ["image", "inspect", "arnold-sandbox:dev"], {
-		stdio: "ignore",
-	});
+	const image = sandboxImageFor(options.repoSlug);
+	const docker = spawnSync("docker", ["image", "inspect", image], { stdio: "ignore" });
 	if (docker.status !== 0) {
-		failures.push(
-			"Docker or the arnold-sandbox:dev image is not available (pnpm sandbox:build)",
-		);
+		failures.push(`Docker or the ${image} image is not available (pnpm sandbox:build)`);
 		return finish();
 	}
 
@@ -122,7 +129,9 @@ export async function runSandboxSelfTest(
 			workspacePath: tree,
 			mirrorPath: mirror,
 			claudeExecutable: resolveClaudeExecutable(),
-			repoSlug: "selftest",
+			// The profile is built for the repo under test (so it picks that repo's
+			// image) and the probe's own slug only matters for token lookup.
+			repoSlug: options.repoSlug ?? "selftest",
 			remoteUrl: remote,
 		});
 		if (options.tamper !== undefined) profile = options.tamper(profile);
@@ -173,7 +182,7 @@ export async function runSandboxSelfTest(
 		const uid = process.getuid?.() ?? 1000;
 		const gid = process.getgid?.() ?? 1000;
 		const args = dockerArgs({
-			name: `arnold-selftest-${process.pid}-${scope}`,
+			name: `arnold-selftest-${process.pid}-${scope}-${options.repoSlug ?? "base"}`,
 			profile,
 			cwd: tree,
 			envFile,

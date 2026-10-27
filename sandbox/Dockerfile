@@ -2,8 +2,8 @@
 #
 # It carries only what the agents' allow-lists use. The `claude` binary is NOT
 # in the image: it is bind-mounted read-only from the SDK's node_modules so its
-# version always matches the pinned SDK. Per-repo toolchains (Node, Python) come
-# as extra layers later.
+# version always matches the pinned SDK. A repo's toolchain is an extra layer in
+# sandbox/images/<slug>.Dockerfile (DECISIONS #33).
 FROM ubuntu:24.04
 
 RUN apt-get update \
