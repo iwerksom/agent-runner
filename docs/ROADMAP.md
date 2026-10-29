@@ -186,7 +186,7 @@ other than the author uses the console (DECISIONS #26).
 **Features**
 
 - [3.1 Mutating agents on ledtraad](features/3.1-mutating-agents-on-ledtraad.md): Planned (#36, #26, #66; #53 and #64 done)
-- [3.2 Run results reach the checkout](features/3.2-run-results-reach-the-checkout.md): Planned (#78, #79)
+- [3.2 Run results reach the checkout](features/3.2-run-results-reach-the-checkout.md): In progress (#78 done; #79 planned)
 
 **Acceptance criteria**
 
