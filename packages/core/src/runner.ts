@@ -14,6 +14,7 @@ import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import type { Agent, Repo, Run } from "@prisma/client";
 import { isTerminalStatus, type AgentManifest } from "./agents.js";
 import { publishRunEvent, publishRunStatus } from "./bus.js";
+import { capturePatch } from "./changes.js";
 import { collectArtifacts, parseOutcome, snapshotArtifacts } from "./collect.js";
 import { knownFindingsContext, recordFindings } from "./findings.js";
 import { requiresSandbox } from "./hold.js";
@@ -324,6 +325,12 @@ export async function runAgent(runId: string): Promise<void> {
 			fullManifest.artifactGlobs,
 			artifactBaseline,
 		);
+		// The run's edits as a patch Arnold can apply, so the agent never needs a git
+		// write to hand them over (feature 3.2). Taken before the lease is released.
+		if (fullManifest.writeScope === "working-tree") {
+			const patchRow = await capturePatch(runId, lease.workspacePath, lease.workspaceBaseSha);
+			if (patchRow !== undefined) artifactRows.push(patchRow);
+		}
 		const outcomeRows = await parseOutcome(
 			runId,
 			lease.workspacePath,

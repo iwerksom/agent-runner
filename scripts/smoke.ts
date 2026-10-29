@@ -37,6 +37,12 @@ import {
 	sandboxEnv,
 	sandboxImageFor,
 } from "../packages/core/src/sandbox.js";
+import {
+	applyPatchFile,
+	computeWorktreePatch,
+	patchApplyBlocker,
+	patchFiles,
+} from "../packages/core/src/changes.js";
 import { runSandboxSelfTest } from "../packages/core/src/selftest.js";
 import { registryManifestsBySlug } from "../registry/index.js";
 import { manifest as aiSmellScan } from "../registry/example-repo/ai-smell-scan.js";
@@ -1544,6 +1550,127 @@ console.log(
 			!mirrorWritable.ok,
 			JSON.stringify(mirrorWritable.failures),
 		);
+	}
+}
+
+console.log("\n[24] a run's changes become a patch, applied only where it is safe (feature 3.2)");
+{
+	const scratch = await mkdtemp(path.join(os.tmpdir(), "arnold-smoke-patch-"));
+	try {
+		const git = (cwd: string, ...args: string[]): string => {
+			const result = spawnSync(
+				"git",
+				[
+					"-C",
+					cwd,
+					"-c",
+					"user.name=smoke",
+					"-c",
+					"user.email=smoke@localhost",
+					"-c",
+					"commit.gpgsign=false",
+					...args,
+				],
+				{ encoding: "utf8" },
+			);
+			if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
+			return result.stdout;
+		};
+		const checkout = path.join(scratch, "checkout");
+		await mkdir(checkout, { recursive: true });
+		git(checkout, "init", "-q", "-b", "feat/x");
+		await writeFile(path.join(checkout, "README.md"), "one\ntwo\nthree\n");
+		await writeFile(path.join(checkout, ".gitignore"), "ignored.txt\n");
+		git(checkout, "add", "-A");
+		git(checkout, "commit", "-q", "-m", "base");
+		const baseSha = git(checkout, "rev-parse", "HEAD").trim();
+
+		// The run's worktree: a clone detached at the base, as a lease is.
+		const worktree = path.join(scratch, "worktree");
+		git(scratch, "clone", "-q", checkout, worktree);
+		git(worktree, "checkout", "-q", "--detach", baseSha);
+
+		const untouched = await computeWorktreePatch(worktree, baseSha);
+		check("a run that changed nothing yields no patch", untouched.trim() === "");
+
+		await writeFile(path.join(worktree, "README.md"), "one\nTWO\nthree\n");
+		await mkdir(path.join(worktree, "tests"), { recursive: true });
+		await writeFile(path.join(worktree, "tests", "new_test.py"), "print('hi')\n");
+		await writeFile(path.join(worktree, "ignored.txt"), "secret\n");
+		const patch = await computeWorktreePatch(worktree, baseSha);
+		const files = patchFiles(patch);
+		check(
+			"the patch carries the edit and the new file",
+			files.includes("README.md") && files.includes("tests/new_test.py"),
+			files.join(", "),
+		);
+		check("a gitignored file stays out of the patch", !files.includes("ignored.txt"));
+		const patchFile = path.join(scratch, "changes.patch");
+		await writeFile(patchFile, patch);
+
+		check(
+			"a clean checkout on the run's base branch can take the patch",
+			(await patchApplyBlocker(checkout, "feat/x", patchFile)) === undefined,
+		);
+		const commitsBefore = git(checkout, "rev-list", "--count", "HEAD").trim();
+		await applyPatchFile(checkout, patchFile);
+		check(
+			"applying changes the working tree and nothing else (no commit, no staging, same branch)",
+			(await readFile(path.join(checkout, "README.md"), "utf8")) === "one\nTWO\nthree\n" &&
+				git(checkout, "rev-list", "--count", "HEAD").trim() === commitsBefore &&
+				git(checkout, "diff", "--cached", "--name-only").trim() === "" &&
+				git(checkout, "symbolic-ref", "--short", "HEAD").trim() === "feat/x",
+		);
+		check(
+			"applying it a second time is refused (the tree is dirty by then)",
+			((await patchApplyBlocker(checkout, "feat/x", patchFile)) ?? "").includes(
+				"uncommitted",
+			),
+		);
+
+		const second = path.join(scratch, "second");
+		git(scratch, "clone", "-q", checkout, second);
+		git(second, "checkout", "-q", "-B", "feat/x", baseSha);
+		check(
+			"another branch is refused, with the branch to check out",
+			((await patchApplyBlocker(second, "other", patchFile)) ?? "").includes(
+				'run started from "other"',
+			),
+		);
+		await writeFile(path.join(second, "scratch.txt"), "dirty\n");
+		check(
+			"a dirty tree is refused",
+			((await patchApplyBlocker(second, "feat/x", patchFile)) ?? "").includes("uncommitted"),
+		);
+		await rm(path.join(second, "scratch.txt"));
+		git(second, "checkout", "-q", "--detach");
+		check(
+			"a detached HEAD is refused",
+			((await patchApplyBlocker(second, "feat/x", patchFile)) ?? "").includes("detached"),
+		);
+		git(second, "checkout", "-q", "feat/x");
+		check(
+			"a run with no recorded base ref is refused",
+			((await patchApplyBlocker(second, undefined, patchFile)) ?? "").includes(
+				"did not record",
+			),
+		);
+		check(
+			"a directory that is not a git checkout is refused",
+			((await patchApplyBlocker(scratch, "feat/x", patchFile)) ?? "").includes(
+				"not a git checkout",
+			),
+		);
+		await writeFile(path.join(second, "README.md"), "one\nCHANGED\nthree\n");
+		git(second, "commit", "-q", "-am", "moved on");
+		check(
+			"a patch that no longer fits the branch is refused",
+			((await patchApplyBlocker(second, "feat/x", patchFile)) ?? "").includes(
+				"no longer applies",
+			),
+		);
+	} finally {
+		await rm(scratch, { recursive: true, force: true });
 	}
 }
 

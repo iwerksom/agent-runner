@@ -53,6 +53,8 @@ export type ArtifactDto = {
 	mimeType: string;
 	sizeBytes: number;
 	createdAt: string;
+	/** Set once a `patch` artifact was applied to the repo's checkout. */
+	appliedAt?: string;
 };
 
 export type RepoDto = {
@@ -183,6 +185,7 @@ export type ArtifactRowForDto = {
 	mimeType: string;
 	sizeBytes: number;
 	createdAt: Date | string;
+	appliedAt?: Date | string | null;
 };
 
 export type RunEventRowForDto = {
@@ -319,6 +322,9 @@ export function mapArtifact(row: ArtifactRowForDto): ArtifactDto {
 		mimeType: row.mimeType,
 		sizeBytes: row.sizeBytes,
 		createdAt: toIso(row.createdAt),
+		...(row.appliedAt === null || row.appliedAt === undefined
+			? {}
+			: { appliedAt: toIso(row.appliedAt) }),
 	};
 }
 
