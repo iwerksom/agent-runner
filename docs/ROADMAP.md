@@ -186,6 +186,7 @@ other than the author uses the console (DECISIONS #26).
 **Features**
 
 - [3.1 Mutating agents on ledtraad](features/3.1-mutating-agents-on-ledtraad.md): Planned (#36, #26, #66; #53 and #64 done)
+- [3.2 Run results reach the checkout](features/3.2-run-results-reach-the-checkout.md): Planned (#78, #79)
 
 **Acceptance criteria**
 
@@ -196,6 +197,7 @@ other than the author uses the console (DECISIONS #26).
   run a repo's commands can run there.
 - Every guardrail in each prompt body is encoded in its manifest, not just
   documented: no force-push, no PR base change, no ready-for-review, no merge.
+- A `working-tree` run's changes are stored as a patch and can be applied to the checkout from the run page; a per-agent `onChanges` setting (`patch` by default) can instead commit them to a branch or fast-forward the checkout.
 - A `work-queue` run records the branch it created and the draft PR it opened on
   the run row, and both are linked from the run detail page.
 - Agents needing a bookkeeping commit on the default branch can perform it
