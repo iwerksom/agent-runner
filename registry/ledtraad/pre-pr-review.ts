@@ -111,7 +111,7 @@ export const manifest: AgentManifest = {
 		model: "opus",
 		effort: "medium",
 		maxTurns: 30,
-		focus: "Compare every docstring and comment that the diff touches, or that describes code the diff changes, with what the code and the library it calls actually do. Where a claim is about a library, read its source (the installed packages are under /opt/venv) rather than trusting the name. Fix claims that are wrong or incomplete, in the same way the first pass fixes comments, and list each with the behaviour that contradicts it.",
+		focus: "Compare every docstring and comment that the diff touches, or that describes code the diff changes, with what the code and the library it calls actually do. Where a claim is about a library, do not trust its name: say what you know of its behaviour and what you could not confirm (the installed packages are outside the workspace and cannot be read, and the library may not be installed in this image at all), and where a test could pin the claim, write one that skips when the library is absent. Fix claims that are wrong or incomplete, in the same way the first pass fixes comments, and list each with the behaviour that contradicts it.",
 		when: {
 			agentFlags: true,
 			changedPaths: ["requirements*.txt", "pyproject.toml", "package.json"],

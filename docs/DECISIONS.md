@@ -897,9 +897,15 @@ result; its spend is still counted. A stop by the operator or the wall clock end
 against $1.97 to $2.61 in 47. The second pass found what the first missed: rank_bm25 floors a
 negative IDF at `epsilon * average_idf` and bm25s does not, so the `_build_bm25` docstring's
 "as before" was wrong; it rewrote it, and noted that no test has ever called a real
-`get_scores`. It hit its 20-turn cap before checking the three call sites' comments
-(raised to 30), so the run was not as complete as the baseline: the 2.5x score-scale gap
-was not reported.
+`get_scores`. It hit its 20-turn cap before checking the three call sites' comments, so the
+run was not as complete as the baseline. With the cap at 30 (second run, same branch): **$1.57 in
+47 turns** ($0.49 sonnet, $1.08 opus), finished with a summary. It found the same IDF-clamp gap
+(the `epsilon=0.25` floor), the "both lanes" comment in `requirements.txt` that is stale now there
+are three, and the unstated assumption that the corpus is fed as raw `_tokenize` strings; it
+added a skip-if-absent test pinning the `get_scores` contract. It could not read the library
+(`/opt/venv` is outside the workspace, and bm25s is not installed in the ledtraad image, so those
+tests skip); the focus said to read it, now corrected. The 2.5x score-scale gap was still not
+named as such.
 
 **Not done:** the escalated model is not scored against known findings (feature 4.3), so
 "as good" is still compared by hand. Escalation has not been run on a second repo.
