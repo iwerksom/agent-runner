@@ -863,6 +863,15 @@ bill by stopping the review before it is done. **Not inlined:** `CLAUDE.md`, whi
 cache read, cache write, output) from the persisted `result` event, so older runs show
 it too. Thinking is inside output; the SDK does not report it separately.
 
+**Measured** (the same ledtraad branch, `feat/bm25s-42`, 2026-11-03). `sonnet` at medium
+effort with `maxTurns` 20 cost $0.52 and ended at the turn cap without a summary (failed).
+With `maxTurns` 30 and a prompt that tells the agent what not to redo, it cost $0.59 in 28
+turns and succeeded: the pyflakes failure fixed, all checks green. It did **not** find the
+`_build_bm25` docstring gaps (the IDF clamp and the score scale differ from `rank_bm25`)
+that the top model found; it read "as before" and passed it. So a cheaper model does the
+deterministic part as well for a quarter of the price, and the reading part is the open
+question: that is what escalation is for.
+
 **Open:** escalation (a cheap pass that hands a hard part to a stronger model) is not
 built; its trigger is still to be decided. The checks run on the unmodified branch, so
 an agent that fixes a failure re-runs that check itself.

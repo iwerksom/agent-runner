@@ -12,6 +12,20 @@ changed files and the listed checks are already in it: skip step 1, take the
 check results from it in step 7, and spend your turns on steps 2 to 6. Do not
 fetch or re-run what it already shows.
 
+You have a limited number of turns (about 30), and a run that ends without a
+summary is a failed run. Work in this order and stop exploring early:
+
+- Read the changed files and what they call. Do not read the virtualenv or
+  installed packages (`/opt/venv`, `.venv`): the dependencies are installed and
+  the check results already say whether they import.
+- Do not use `ToolSearch`, `git log --all`, or `git fetch origin` (the worktree's
+  `origin` is not reachable; the base branch is local).
+- Run one command per Bash call, exactly as allow-listed. Chained commands
+  (`;`, `&&`, `|`, `echo`) are refused and cost a turn.
+- Once your edits are done, re-run only the checks covering them, then write the
+  step 8 summary. If you are down to your last 4 turns, write the summary now,
+  including any pass you did not finish.
+
 1. Show the diff vs the base: `git fetch origin ${1:-main}` then
    `git diff origin/${1:-main}...HEAD` (and list changed files).
 2. Review every change against BOTH:

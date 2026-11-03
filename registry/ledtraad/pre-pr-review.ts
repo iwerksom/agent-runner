@@ -24,7 +24,10 @@
  *   - `model: "sonnet"` and `effort: "medium"`. The one finding that must not be
  *     missed (the pyflakes failure) now arrives as check output, not as something
  *     the model has to think its way to.
- *   - No subagents, and `maxTurns` 20 instead of 40.
+ *   - No subagents, and `maxTurns` 30 instead of 40. A first re-run at 20 spent its turns on
+ *     tool discovery, venv reading and compound Bash the gate refuses, and hit the cap
+ *     before the summary ($0.52, failed). The cap is for stopping a runaway, not for
+ *     squeezing cost; the prompt tells the agent not to redo what the context shows.
  */
 
 import type { AgentManifest } from "@arnold/core";
@@ -121,7 +124,7 @@ export const manifest: AgentManifest = {
 	],
 
 	reasonCodes: [],
-	budget: { dailyCostCapUsd: 4, maxTurns: 20, maxWallClockMinutes: 25 },
+	budget: { dailyCostCapUsd: 4, maxTurns: 30, maxWallClockMinutes: 25 },
 
 	notes: [
 		"Does not commit or push: no git write command is in the allow-list and the working-tree sandbox cannot write the mirror.",
