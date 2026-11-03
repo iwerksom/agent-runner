@@ -131,6 +131,35 @@ export type PrepareSpec = {
 };
 
 /**
+ * A second, stronger pass over a cheap first one (#75). The first pass runs on the
+ * manifest's own `model`; when a trigger fires, Arnold starts one more query in
+ * the same worktree on `model` below, with only `focus` as its job, the first
+ * pass's report and the diff, so it does not repeat the review.
+ *
+ * Triggers are Arnold's, not the model's, because a cheap model that misses a
+ * finding is not unsure about it: sonnet at medium read "takes the query's tokens
+ * and scores every document, as before" and passed it, against a library swap. So
+ * a trigger can also be a property of the diff.
+ */
+export type EscalateSpec = {
+	/** Model for the second pass, e.g. "opus". */
+	model: string;
+	effort?: EffortLevel;
+	/** Turns for the second pass alone. */
+	maxTurns: number;
+	/** What the second pass is for. The first pass's whole review is not its job. */
+	focus: string;
+	when: {
+		/** The first pass ends with a fenced json block `{"escalate":[{"file","reason"}]}`. */
+		agentFlags?: boolean;
+		/** The diff changes a file matching one of these globs (`*` stays inside a directory). */
+		changedPaths?: string[];
+		/** The diff changes at least this many lines (added plus removed). */
+		diffLines?: number;
+	};
+};
+
+/**
  * One argument, mapped to the slot the prompt body actually reads. Getting
  * `slot` wrong is the most likely silent breakage, because the prompt reads
  * positionals and will happily run with the wrong value substituted.
@@ -225,6 +254,8 @@ export type AgentManifest = {
 	effort?: EffortLevel;
 	/** Context Arnold computes before the run instead of letting the agent discover it. */
 	prepare?: PrepareSpec;
+	/** A stronger second pass for what the cheap first one cannot judge. */
+	escalate?: EscalateSpec;
 	tools: ToolPolicy;
 	writeScope: WriteScope;
 	mainBookkeeping?: MainBookkeeping;

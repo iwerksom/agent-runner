@@ -31,6 +31,7 @@ export * from "./workspace.js";
 export * from "./writeScope.js";
 export * from "./sdkAdapter.js";
 export * from "./prepare.js";
+export * from "./escalate.js";
 export * from "./runner.js";
 export * from "./dispatcher.js";
 

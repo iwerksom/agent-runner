@@ -101,6 +101,22 @@ export const manifest: AgentManifest = {
 			{ name: "deploy_data.sh syntax", command: ["bash", "-n", "scripts/deploy_data.sh"] },
 		],
 	},
+	// A second, stronger pass for what a cheap one cannot judge (#75). The re-run on
+	// feat/bm25s-42 showed why the trigger cannot only be "the agent asks": sonnet
+	// read a docstring claiming the new library behaves "as before" and passed it,
+	// confidently, while the top model had found the IDF clamp and score scale differ.
+	// A changed dependency manifest is where that class of finding lives: every
+	// comment about the old library's behaviour becomes a claim to check.
+	escalate: {
+		model: "opus",
+		effort: "medium",
+		maxTurns: 30,
+		focus: "Compare every docstring and comment that the diff touches, or that describes code the diff changes, with what the code and the library it calls actually do. Where a claim is about a library, read its source (the installed packages are under /opt/venv) rather than trusting the name. Fix claims that are wrong or incomplete, in the same way the first pass fixes comments, and list each with the behaviour that contradicts it.",
+		when: {
+			agentFlags: true,
+			changedPaths: ["requirements*.txt", "pyproject.toml", "package.json"],
+		},
+	},
 	writeScope: "working-tree",
 	scopeEnforcement: "manifest",
 	execution: "unattended",
@@ -131,5 +147,6 @@ export const manifest: AgentManifest = {
 		"Runs in the ledtraad sandbox layer: Python and the static CI job's dependencies, but no corpus (data/ is not in git) and no .venv, so the golden set and location tests are out of reach and must be reported as not run.",
 		"Build the layer with pnpm sandbox:build before the first run.",
 		"Runs on sonnet at medium effort with the diff and CI check output precomputed (#75). The checks run on the unmodified branch before the model starts.",
+		"Escalates to opus (one more pass, 30 turns, a docstring-and-comment check only) when the diff changes a dependency manifest or the first pass asks for it. Its cost is added to the run.",
 	],
 };

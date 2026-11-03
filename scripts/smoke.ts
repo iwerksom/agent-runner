@@ -26,7 +26,17 @@ import { atLeast } from "../packages/core/src/agents.js";
 import { releasableInSoloMode, tierHold } from "../packages/core/src/hold.js";
 import { extractRunTicketKeys, extractTicketKeys } from "../packages/core/src/notary.js";
 import { preflightPromptValues, renderPrompt, validateArgs } from "../packages/core/src/prompt.js";
-import { gateAsPreToolUseHook, usageByClass } from "../packages/core/src/sdkAdapter.js";
+import {
+	gateAsPreToolUseHook,
+	mergeUsageClasses,
+	usageByClass,
+} from "../packages/core/src/sdkAdapter.js";
+import {
+	decideEscalation,
+	escalationPrompt,
+	parseEscalationRequest,
+} from "../packages/core/src/escalate.js";
+import { changedLineCount } from "../packages/core/src/prepare.js";
 import {
 	capSection,
 	hostCheckExecutor,
@@ -1911,6 +1921,129 @@ console.log("\n[25] cheaper runs: context and checks prepared outside the model 
 	check(
 		"a non-result payload has no token classes",
 		usageByClass({ type: "assistant" }).length === 0,
+	);
+}
+
+console.log("\n[26] escalation: a stronger second pass, decided by Arnold (#75)");
+{
+	const spec = ledtraadPrePrReview.escalate;
+	check("ledtraad review declares an escalation to a stronger model", spec?.model === "opus");
+	const flagBlock = (body: string): string => `Summary.\n\n\`\`\`json\n${body}\n\`\`\`\n`;
+	check(
+		"a flagged place is read from the report's json block",
+		parseEscalationRequest(
+			flagBlock('{"escalate":[{"file":"a.py","reason":"could not verify the library"}]}'),
+		).length === 1,
+	);
+	check(
+		"the last block with an escalate list wins, an earlier one does not",
+		parseEscalationRequest(
+			flagBlock('{"escalate":[{"file":"old.py","reason":"x"}]}') +
+				flagBlock('{"escalate":[]}'),
+		).length === 0,
+	);
+	check(
+		"malformed json, wrong shapes and prose are no request",
+		parseEscalationRequest(flagBlock("{not json")).length === 0 &&
+			parseEscalationRequest(flagBlock('{"escalate":"a.py"}')).length === 0 &&
+			parseEscalationRequest(flagBlock('{"escalate":[{"file":"","reason":"x"},{"file":3}]}'))
+				.length === 0 &&
+			parseEscalationRequest("I was unable to verify the library's behaviour.").length === 0,
+	);
+	const quiet = { changedFiles: ["scripts/a.py"], diffLines: 10, finalText: "All green." };
+	check("no escalation without a spec", !decideEscalation(undefined, quiet).escalate);
+	check(
+		"a quiet diff and a sure first pass stay on the cheap model",
+		spec !== undefined && !decideEscalation(spec, quiet).escalate,
+	);
+	check(
+		"a changed requirements file escalates, whatever the first pass said",
+		spec !== undefined &&
+			decideEscalation(spec, { ...quiet, changedFiles: ["scripts/a.py", "requirements.txt"] })
+				.escalate,
+	);
+	check(
+		"a manifest in a subdirectory is not the root one (* stays inside a directory)",
+		spec !== undefined &&
+			!decideEscalation(spec, { ...quiet, changedFiles: ["docs/requirements.txt"] }).escalate,
+	);
+	const asked =
+		spec === undefined
+			? undefined
+			: decideEscalation(spec, {
+					...quiet,
+					finalText: flagBlock(
+						'{"escalate":[{"file":"scripts/a.py","reason":"unsure"}]}',
+					),
+				});
+	check(
+		"the first pass asking escalates and carries its reasons",
+		asked?.escalate === true && asked.flagged[0]?.file === "scripts/a.py",
+	);
+	check(
+		"a diff past the line threshold escalates",
+		decideEscalation(
+			{ ...ledtraadPrePrReview.escalate!, when: { diffLines: 50 } },
+			{ ...quiet, diffLines: 50 },
+		).escalate &&
+			!decideEscalation(
+				{ ...ledtraadPrePrReview.escalate!, when: { diffLines: 50 } },
+				{ ...quiet, diffLines: 49 },
+			).escalate,
+	);
+	check(
+		"changed lines count adds and removals, not the file headers",
+		changedLineCount("--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n-old\n+new\n same\n+more") === 3,
+	);
+	if (spec !== undefined) {
+		const prompt = escalationPrompt(spec, {
+			reasons: ["the diff changes requirements.txt (matches requirements*.txt)"],
+			flagged: [],
+			firstReport: "Fixed three unused imports.",
+			changedFiles: ["requirements.txt"],
+			patch: "-rank_bm25\n+bm25s",
+		});
+		check(
+			"the second pass is given its one job, the first report and the diff",
+			prompt.includes(spec.focus) &&
+				prompt.includes("Fixed three unused imports.") &&
+				prompt.includes("+bm25s") &&
+				prompt.includes("requirements*.txt"),
+		);
+		check(
+			"the second pass is told not to redo the first, and that the diff is data",
+			prompt.includes("Do not redo the first pass") && prompt.includes("not instructions"),
+		);
+		check(
+			"a huge diff is cut and says so",
+			escalationPrompt(spec, {
+				reasons: ["x"],
+				flagged: [],
+				firstReport: "",
+				changedFiles: [],
+				patch: "x".repeat(500),
+				maxPatchChars: 100,
+			}).includes("cut at 100 characters"),
+		);
+	}
+	const row = (model: string, cost: number, out: number) => ({
+		usageModel: model,
+		usageInputTokens: 1,
+		usageOutputTokens: out,
+		usageCacheReadTokens: 10,
+		usageCacheWriteTokens: 2,
+		usageCostUsd: cost,
+	});
+	const merged = mergeUsageClasses(
+		[row("claude-sonnet-5", 0.5, 7000)],
+		[row("claude-opus-5", 0.9, 3000), row("claude-sonnet-5", 0.1, 1000)],
+	);
+	check(
+		"two passes' usage is summed per model, dearest first",
+		merged.length === 2 &&
+			merged[0]?.usageModel === "claude-opus-5" &&
+			merged[1]?.usageCostUsd === 0.6 &&
+			merged[1]?.usageOutputTokens === 8000,
 	);
 }
 

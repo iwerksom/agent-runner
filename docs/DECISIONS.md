@@ -872,6 +872,34 @@ that the top model found; it read "as before" and passed it. So a cheaper model 
 deterministic part as well for a quarter of the price, and the reading part is the open
 question: that is what escalation is for.
 
-**Open:** escalation (a cheap pass that hands a hard part to a stronger model) is not
-built; its trigger is still to be decided. The checks run on the unmodified branch, so
-an agent that fixes a failure re-runs that check itself.
+**Escalation.** A manifest may declare `escalate`: a stronger `model`, its own `maxTurns`,
+a `focus` (its one job) and triggers, decided by Arnold in `escalate.ts`. After a first pass
+that ended cleanly, if a trigger fires Arnold starts a second query in the same worktree,
+handing it the focus, the first pass's report and the diff, and told not to redo the first
+pass. The triggers: the first pass ends its report with a fenced `{"escalate":[...]}` block
+(`agentFlags`); the diff changes a file matching `changedPaths`; the diff changes at least
+`diffLines` lines. The costs are summed per model (the run page shows both rows).
+
+**Why a trigger can be a property of the diff.** "The agent asks" is not enough: the cheap
+pass read a docstring claiming the new library behaves "as before" and passed it with
+confidence. A model that misses a finding is not unsure about it. For ledtraad the trigger
+is a changed dependency manifest (`requirements*.txt`, `pyproject.toml`, `package.json`),
+where every comment about the old library's behaviour becomes a claim to check, plus the
+agent's own flag. This is tuned to the one case measured; widen it when a second one shows
+what else the cheap pass misses. 4.3's scoring is the long-term way to find out.
+
+**A failed second pass does not discard the first.** The first pass is a finished review.
+A second pass that errors (its turn cap, say) is logged and the run keeps the first pass's
+result; its spend is still counted. A stop by the operator or the wall clock ends the run.
+
+**Measured** (same branch, 2026-11-03): sonnet at medium, then opus on the changed
+`requirements.txt` and the agent's own flag: **$1.44 in 40 turns** ($0.53 sonnet, $0.92 opus)
+against $1.97 to $2.61 in 47. The second pass found what the first missed: rank_bm25 floors a
+negative IDF at `epsilon * average_idf` and bm25s does not, so the `_build_bm25` docstring's
+"as before" was wrong; it rewrote it, and noted that no test has ever called a real
+`get_scores`. It hit its 20-turn cap before checking the three call sites' comments
+(raised to 30), so the run was not as complete as the baseline: the 2.5x score-scale gap
+was not reported.
+
+**Not done:** the escalated model is not scored against known findings (feature 4.3), so
+"as good" is still compared by hand. Escalation has not been run on a second repo.

@@ -116,6 +116,18 @@ summary is a failed run. Work in this order and stop exploring early:
    confirm the verification results. Do NOT push or open the PR unless asked —
    just leave the branch clean and ready.
 
+    If there is a place you could not judge with confidence (a comment about how
+    a library or another module behaves that you could not verify from what you
+    read, a contract you inferred), end the summary with a fenced json block
+    naming it, so a stronger second pass can look at just that:
+
+    ```json
+    { "escalate": [{ "file": "path/to/file", "reason": "what you could not verify" }] }
+    ```
+
+    Leave the block out when you are sure. Saying "I was unable to verify" in
+    prose does nothing; only the block starts the second pass.
+
 Goal: make the first automated review pass converge quickly. Front-load the
 substantive fixes here — especially the adversarial and doc-drift passes, which
 are the classes the automated reviewer catches that a convention-only review

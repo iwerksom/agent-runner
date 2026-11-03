@@ -200,6 +200,36 @@ export function usageByClass(message: unknown): ModelUsageByClass[] {
 	return rows.sort((a, b) => b.usageCostUsd - a.usageCostUsd);
 }
 
+/**
+ * Two passes of one run, summed per model. A second pass on a stronger model adds
+ * a row; one on the same model adds to its row. Most expensive first, like
+ * `usageByClass`.
+ */
+export function mergeUsageClasses(
+	first: readonly ModelUsageByClass[],
+	second: readonly ModelUsageByClass[],
+): ModelUsageByClass[] {
+	const byModel = new Map<string, ModelUsageByClass>();
+	for (const row of [...first, ...second]) {
+		const seen = byModel.get(row.usageModel);
+		byModel.set(
+			row.usageModel,
+			seen === undefined
+				? { ...row }
+				: {
+						usageModel: row.usageModel,
+						usageInputTokens: seen.usageInputTokens + row.usageInputTokens,
+						usageOutputTokens: seen.usageOutputTokens + row.usageOutputTokens,
+						usageCacheReadTokens: seen.usageCacheReadTokens + row.usageCacheReadTokens,
+						usageCacheWriteTokens:
+							seen.usageCacheWriteTokens + row.usageCacheWriteTokens,
+						usageCostUsd: seen.usageCostUsd + row.usageCostUsd,
+					},
+		);
+	}
+	return [...byModel.values()].sort((a, b) => b.usageCostUsd - a.usageCostUsd);
+}
+
 /** The SDK throws AbortError (not DOMException) when its controller is aborted. */
 export function isAbortError(caught: unknown): boolean {
 	if (caught instanceof Error) {

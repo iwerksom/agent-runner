@@ -68,6 +68,8 @@ export type PreparedContext = {
 		checks: { name: string; exitCode: number | null; timedOut: boolean; ms: number }[];
 		contextChars: number;
 	};
+	/** The diff itself, for a later pass that needs it without the rest of the block. */
+	diff: { files: string[]; lines: number; patch: string };
 };
 
 /** How a check is executed: inside the sandbox, or on the host when it is off. */
@@ -282,7 +284,8 @@ export async function prepareContext(input: PrepareInput): Promise<PreparedConte
 		checks: [],
 		contextChars: 0,
 	};
-	if (spec === undefined) return { contextBlock: "", contextSummary: summary };
+	const diff: PreparedContext["diff"] = { files: [], lines: 0, patch: "" };
+	if (spec === undefined) return { contextBlock: "", contextSummary: summary, diff };
 	const max = spec.maxCharsPerSection ?? DEFAULT_MAX_CHARS;
 	const sections: string[] = [];
 
@@ -304,7 +307,12 @@ export async function prepareContext(input: PrepareInput): Promise<PreparedConte
 					git(workspacePath, ["diff", ...plain, "--stat", range]),
 					git(workspacePath, ["diff", ...plain, range]),
 				]);
-				summary.changedFiles = nameStatus.split("\n").filter((l) => l.trim() !== "").length;
+				const statusLines = nameStatus.split("\n").filter((l) => l.trim() !== "");
+				summary.changedFiles = statusLines.length;
+				// "M\tpath", or "R100\told\tnew": the last column is where it ends up.
+				diff.files = statusLines.map((l) => l.split("\t").at(-1) ?? "");
+				diff.lines = changedLineCount(patch);
+				diff.patch = patch;
 				sections.push(
 					[
 						`### Diff: \`git diff ${base}...HEAD\``,
@@ -383,7 +391,7 @@ export async function prepareContext(input: PrepareInput): Promise<PreparedConte
 		);
 	}
 
-	if (sections.length === 0) return { contextBlock: "", contextSummary: summary };
+	if (sections.length === 0) return { contextBlock: "", contextSummary: summary, diff };
 	const contextBlock = [
 		"",
 		"## Context prepared by Arnold",
@@ -394,5 +402,15 @@ export async function prepareContext(input: PrepareInput): Promise<PreparedConte
 		"",
 	].join("\n");
 	summary.contextChars = contextBlock.length;
-	return { contextBlock, contextSummary: summary };
+	return { contextBlock, contextSummary: summary, diff };
+}
+
+/** Added plus removed lines in a unified diff, not counting the file headers. */
+export function changedLineCount(patch: string): number {
+	let count = 0;
+	for (const line of patch.split("\n")) {
+		if (line.startsWith("+++") || line.startsWith("---")) continue;
+		if (line.startsWith("+") || line.startsWith("-")) count += 1;
+	}
+	return count;
 }

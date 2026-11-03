@@ -30,6 +30,7 @@ import { errorMessageOf, NotFoundError, ValidationError } from "./errors.js";
 import { parseJsonColumn, stringifyJsonColumn } from "./json.js";
 import { checkBudget, recordUsage } from "./ledger.js";
 import { recordProvenance } from "./notary.js";
+import { decideEscalation, escalationPrompt } from "./escalate.js";
 import { hostCheckExecutor, prepareContext, sandboxCheckExecutor } from "./prepare.js";
 import { renderPrompt } from "./prompt.js";
 import {
@@ -38,6 +39,7 @@ import {
 	isErrorResult,
 	messageText,
 	resultUsage,
+	mergeUsageClasses,
 	usageByClass,
 	runEventTypeFor,
 } from "./sdkAdapter.js";
@@ -335,28 +337,94 @@ export async function runAgent(runId: string): Promise<void> {
 		let assistantText = "";
 		let finalMessageText = "";
 		let resultWasError = false;
+		// What earlier passes of this run already spent: a result's usage covers its
+		// own query only, and the run's totals are all of them.
+		let spentBefore = { cost: 0, tokens: 0, turns: 0, classes: usageClasses };
 
-		for await (const message of query({ prompt: promptBody, options })) {
-			seq += 1;
-			const eventType = runEventTypeFor(message);
-			await appendRunEvent(runId, seq, eventType, message);
+		const runPass = async (prompt: string, passOptions: Options): Promise<void> => {
+			for await (const message of query({ prompt, options: passOptions })) {
+				seq += 1;
+				const eventType = runEventTypeFor(message);
+				await appendRunEvent(runId, seq, eventType, message);
 
-			const text = messageText(message);
-			if (text !== "") {
-				assistantText += `${text}\n`;
-				if (eventType === "assistant") finalMessageText = text;
+				const text = messageText(message);
+				if (text !== "") {
+					assistantText += `${text}\n`;
+					if (eventType === "assistant") finalMessageText = text;
+				}
+
+				const usage = resultUsage(message);
+				if (usage !== undefined) {
+					usageCostUsd = spentBefore.cost + usage.resultCostUsd;
+					usageClasses = mergeUsageClasses(spentBefore.classes, usageByClass(message));
+					usageTokens = spentBefore.tokens + usage.resultTokens;
+					usageTurns = spentBefore.turns + usage.resultTurns;
+					resultWasError = isErrorResult(message);
+					// The result message's own text is the agent's final word when it
+					// wrote one, which is what outcome parsing wants.
+					if (text !== "") finalMessageText = text;
+				}
 			}
+		};
 
-			const usage = resultUsage(message);
-			if (usage !== undefined) {
-				usageCostUsd = usage.resultCostUsd;
-				usageClasses = usageByClass(message);
-				usageTokens = usage.resultTokens;
-				usageTurns = usage.resultTurns;
-				resultWasError = isErrorResult(message);
-				// The result message's own text is the agent's final word when it
-				// wrote one, which is what outcome parsing wants.
-				if (text !== "") finalMessageText = text;
+		await runPass(promptBody, options);
+
+		// A stronger second pass, when a trigger fires (#75). Only after a pass that
+		// ended cleanly and was not stopped: a failed or aborted first pass has not
+		// produced a review to second-guess.
+		const escalate = fullManifest.escalate;
+		const decision = decideEscalation(escalate, {
+			changedFiles: prepared.diff.files,
+			diffLines: prepared.diff.lines,
+			finalText: finalMessageText,
+		});
+		if (
+			escalate !== undefined &&
+			decision.escalate &&
+			!resultWasError &&
+			!wallClockExpired &&
+			!inflight.cancelRequested
+		) {
+			await appendRunEvent(runId, ++seq, "log", {
+				message: `escalating to ${escalate.model}`,
+				reasons: decision.reasons,
+				flagged: decision.flagged,
+				firstPassCostUsd: usageCostUsd,
+			});
+			spentBefore = {
+				cost: usageCostUsd,
+				tokens: usageTokens,
+				turns: usageTurns,
+				classes: usageClasses,
+			};
+			const firstPassText = finalMessageText;
+			try {
+				await runPass(
+					escalationPrompt(escalate, {
+						reasons: decision.reasons,
+						flagged: decision.flagged,
+						firstReport: finalMessageText,
+						changedFiles: prepared.diff.files,
+						patch: prepared.diff.patch,
+					}),
+					{
+						...options,
+						model: escalate.model,
+						maxTurns: escalate.maxTurns,
+						...(escalate.effort === undefined ? {} : { effort: escalate.effort }),
+					},
+				);
+			} catch (escalationFailure: unknown) {
+				// The first pass is a finished review; a stopped or failed second one
+				// must not discard it. A stop is the operator's or the clock's, and still
+				// ends the run.
+				if (wallClockExpired || inflight.cancelRequested) throw escalationFailure;
+				await appendRunEvent(runId, ++seq, "log", {
+					message: `the escalation pass failed: ${errorMessageOf(escalationFailure)}`,
+					failure: true,
+				});
+				resultWasError = false;
+				finalMessageText = firstPassText;
 			}
 		}
 
