@@ -19,10 +19,14 @@ import {
 	effectiveExecution,
 	tierHold,
 	parseJsonColumn,
+	usageByClass,
+	mergeUsageClasses,
+	type ModelUsageByClass,
 	type AgentKind,
 	type AgentManifest,
 	type AgentState,
 	type ArgSpec,
+	type EffortLevel,
 	type ExecutionMode,
 	type MainBookkeeping,
 	type OutcomeSpec,
@@ -143,6 +147,9 @@ export type AgentSummary = {
 	prompt?: PromptSource;
 	contextTemplate?: string;
 	model?: string;
+	effort?: EffortLevel;
+	/** The stronger second pass, when the manifest declares one (#75). */
+	escalate?: { model: string; effort?: EffortLevel };
 	tools?: ToolPolicy;
 	unattendedIfArgs?: string[];
 	artifactGlobs?: string[];
@@ -160,6 +167,11 @@ export type RunDetail = RunSummary & {
 	/** Recorded by the Notary on every lease; previously dropped by this mapper. */
 	workspaceId?: string;
 	baseRef?: string;
+	/**
+	 * Cost by model and token class, summed over the run's `result` events, one per pass (#75).
+	 * Derived rather than stored, so runs recorded before this existed show it too.
+	 */
+	usageByClass: ModelUsageByClass[];
 };
 
 /* -------------------------------------------------------------------------- */
@@ -490,6 +502,11 @@ export function mapAgentSummary(row: AgentRowForDto, stats: AgentSummaryStats = 
 		prompt: manifest.prompt,
 		contextTemplate: manifest.contextTemplate,
 		model: manifest.model,
+		effort: manifest.effort,
+		escalate:
+			manifest.escalate === undefined
+				? undefined
+				: { model: manifest.escalate.model, effort: manifest.escalate.effort },
 		tools: manifest.tools,
 		unattendedIfArgs: manifest.unattendedIfArgs,
 		artifactGlobs: manifest.artifactGlobs,
@@ -507,10 +524,19 @@ export function mapRunDetail(
 		workspacePath?: string;
 	},
 ): RunDetail {
+	const events = (row.events ?? []).map(mapRunEvent);
+	// One result per pass: an escalated run has two, and the run's cost is both.
+	const usage = events
+		.filter((event) => event.type === "result")
+		.reduce<ModelUsageByClass[]>(
+			(sum, event) => mergeUsageClasses(sum, usageByClass(event.payload)),
+			[],
+		);
 	return {
 		...mapRunSummary(row),
 		agent: relations.agent,
-		events: (row.events ?? []).map(mapRunEvent),
+		events,
+		usageByClass: usage,
 		artifacts: (row.artifacts ?? []).map(mapArtifact),
 		children: relations.children,
 		workspacePath: relations.workspacePath,

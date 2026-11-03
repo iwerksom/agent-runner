@@ -40,6 +40,50 @@ function Metric({
 	);
 }
 
+/**
+ * Where the cost went, per model and token class (#75). The total alone hid that
+ * a $2.61 review was mostly cache reads of a growing conversation plus thinking,
+ * which is what made the fix (hand the agent its context, cap effort) obvious.
+ * Thinking is inside "output": the SDK does not report it separately.
+ */
+function RunUsageByClass({ runUsageRows }: { runUsageRows: RunDetail["usageByClass"] }) {
+	const header = [
+		"Model",
+		"Input",
+		"Cache read",
+		"Cache write",
+		"Output (incl. thinking)",
+		"Cost",
+	];
+	return (
+		<div className="overflow-x-auto border-t border-divider pt-3">
+			<table className="w-full min-w-[480px] text-left font-mono text-[11px] tabular-nums">
+				<thead>
+					<tr className="text-[10px] uppercase tracking-wider text-default-400">
+						{header.map((label) => (
+							<th key={label} className="pb-1 pr-3 font-normal">
+								{label}
+							</th>
+						))}
+					</tr>
+				</thead>
+				<tbody className="text-default-700">
+					{runUsageRows.map((row) => (
+						<tr key={row.usageModel}>
+							<td className="pr-3">{row.usageModel}</td>
+							<td className="pr-3">{formatTokens(row.usageInputTokens)}</td>
+							<td className="pr-3">{formatTokens(row.usageCacheReadTokens)}</td>
+							<td className="pr-3">{formatTokens(row.usageCacheWriteTokens)}</td>
+							<td className="pr-3">{formatTokens(row.usageOutputTokens)}</td>
+							<td>{formatCostUsd(row.usageCostUsd)}</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
+		</div>
+	);
+}
+
 export function RunHeader({
 	runHeaderRun,
 	runHeaderLiveStatus,
@@ -153,6 +197,10 @@ export function RunHeader({
 					metricValue={`${run.numTurns} / ${run.agent.budget?.maxTurns ?? "—"}`}
 				/>
 			</div>
+
+			{run.usageByClass.length > 0 ? (
+				<RunUsageByClass runUsageRows={run.usageByClass} />
+			) : undefined}
 
 			{run.exitReason && terminal ? (
 				<p className="text-xs text-default-500">

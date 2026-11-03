@@ -833,3 +833,79 @@ ledtraad's layer matches its static CI job, and `ledtraad-pre-pr-review` is boun
 an allow-list of exactly those commands (the example agent's names `tsc`, `vitest`, `eslint`).
 Not covered: the corpus, `.venv` and torch stack, so corpus-dependent checks are reported as
 not run. Not done: a first real run of the agent on a ledtraad branch.
+
+## 34. Arnold prepares what an agent would discover, and runs the checks itself
+
+Phase 3, issue #75. The first `ledtraad-pre-pr-review` run cost $2.61 for a 40-line
+diff: 47 turns on the default model, 21 Bash and 15 Read calls to find the diff, the
+conventions and the CI commands, and 27k of its 38k output tokens spent thinking. Every
+turn re-reads the conversation so far, so discovery is the expensive part, and none of
+it needed the model.
+
+**Decision:** a manifest may declare `prepare`: the branch diff (`diff.baseArg`), files
+to inline, and checks to run as argv. Arnold computes them before the query and appends
+a "Context prepared by Arnold" block to the prompt. The diff and files are read on the
+host with git and the file system; checks run in the agent's own sandbox profile (on the
+host only when the sandbox is off, which the runner already refuses for any scope that
+writes product code). Preparation never fails a run: a missing base or a timed-out check
+is written into the block as exactly that, and the agent can fall back to its tools.
+
+Alongside it: `model` and `effort` per manifest (unset means the top model at high
+effort, which is how the review got expensive), and `tools.disallowedTools`, passed to
+the SDK so the model never sees the tool and also refused by `canUseTool`. Review agents
+disallow `Agent` and `Task`: a subagent starts a fresh context and re-reads the repo.
+
+**Rejected:** letting the agent keep discovering, with a lower `maxTurns`. That caps the
+bill by stopping the review before it is done. **Not inlined:** `CLAUDE.md`, which
+`settingSources: ["project"]` already puts in the system prompt.
+
+**Visible, not guessed:** the run header shows cost per model and token class (input,
+cache read, cache write, output) from the persisted `result` event, so older runs show
+it too. Thinking is inside output; the SDK does not report it separately.
+
+**Measured** (the same ledtraad branch, `feat/bm25s-42`, 2026-11-03). `sonnet` at medium
+effort with `maxTurns` 20 cost $0.52 and ended at the turn cap without a summary (failed).
+With `maxTurns` 30 and a prompt that tells the agent what not to redo, it cost $0.59 in 28
+turns and succeeded: the pyflakes failure fixed, all checks green. It did **not** find the
+`_build_bm25` docstring gaps (the IDF clamp and the score scale differ from `rank_bm25`)
+that the top model found; it read "as before" and passed it. So a cheaper model does the
+deterministic part as well for a quarter of the price, and the reading part is the open
+question: that is what escalation is for.
+
+**Escalation.** A manifest may declare `escalate`: a stronger `model`, its own `maxTurns`,
+a `focus` (its one job) and triggers, decided by Arnold in `escalate.ts`. After a first pass
+that ended cleanly, if a trigger fires Arnold starts a second query in the same worktree,
+handing it the focus, the first pass's report and the diff, and told not to redo the first
+pass. The triggers: the first pass ends its report with a fenced `{"escalate":[...]}` block
+(`agentFlags`); the diff changes a file matching `changedPaths`; the diff changes at least
+`diffLines` lines. The costs are summed per model (the run page shows both rows).
+
+**Why a trigger can be a property of the diff.** "The agent asks" is not enough: the cheap
+pass read a docstring claiming the new library behaves "as before" and passed it with
+confidence. A model that misses a finding is not unsure about it. For ledtraad the trigger
+is a changed dependency manifest (`requirements*.txt`, `pyproject.toml`, `package.json`),
+where every comment about the old library's behaviour becomes a claim to check, plus the
+agent's own flag. This is tuned to the one case measured; widen it when a second one shows
+what else the cheap pass misses. 4.3's scoring is the long-term way to find out.
+
+**A failed second pass does not discard the first.** The first pass is a finished review.
+A second pass that errors (its turn cap, say) is logged and the run keeps the first pass's
+result; its spend is still counted. A stop by the operator or the wall clock ends the run.
+
+**Measured** (same branch, 2026-11-03): sonnet at medium, then opus on the changed
+`requirements.txt` and the agent's own flag: **$1.44 in 40 turns** ($0.53 sonnet, $0.92 opus)
+against $1.97 to $2.61 in 47. The second pass found what the first missed: rank_bm25 floors a
+negative IDF at `epsilon * average_idf` and bm25s does not, so the `_build_bm25` docstring's
+"as before" was wrong; it rewrote it, and noted that no test has ever called a real
+`get_scores`. It hit its 20-turn cap before checking the three call sites' comments, so the
+run was not as complete as the baseline. With the cap at 30 (second run, same branch): **$1.57 in
+47 turns** ($0.49 sonnet, $1.08 opus), finished with a summary. It found the same IDF-clamp gap
+(the `epsilon=0.25` floor), the "both lanes" comment in `requirements.txt` that is stale now there
+are three, and the unstated assumption that the corpus is fed as raw `_tokenize` strings; it
+added a skip-if-absent test pinning the `get_scores` contract. It could not read the library
+(`/opt/venv` is outside the workspace, and bm25s is not installed in the ledtraad image, so those
+tests skip); the focus said to read it, now corrected. The 2.5x score-scale gap was still not
+named as such.
+
+**Not done:** the escalated model is not scored against known findings (feature 4.3), so
+"as good" is still compared by hand. Escalation has not been run on a second repo.

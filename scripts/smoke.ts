@@ -26,7 +26,24 @@ import { atLeast } from "../packages/core/src/agents.js";
 import { releasableInSoloMode, tierHold } from "../packages/core/src/hold.js";
 import { extractRunTicketKeys, extractTicketKeys } from "../packages/core/src/notary.js";
 import { preflightPromptValues, renderPrompt, validateArgs } from "../packages/core/src/prompt.js";
-import { gateAsPreToolUseHook } from "../packages/core/src/sdkAdapter.js";
+import {
+	gateAsPreToolUseHook,
+	mergeUsageClasses,
+	usageByClass,
+} from "../packages/core/src/sdkAdapter.js";
+import {
+	decideEscalation,
+	escalationPrompt,
+	parseEscalationRequest,
+} from "../packages/core/src/escalate.js";
+import { changedLineCount } from "../packages/core/src/prepare.js";
+import {
+	capSection,
+	hostCheckExecutor,
+	prepareContext,
+	type CheckExecutor,
+} from "../packages/core/src/prepare.js";
+import { manifest as ledtraadPrePrReview } from "../registry/ledtraad/pre-pr-review.js";
 import { buildCanUseTool } from "../packages/core/src/writeScope.js";
 import {
 	artifactDirOf,
@@ -1672,6 +1689,362 @@ console.log("\n[24] a run's changes become a patch, applied only where it is saf
 	} finally {
 		await rm(scratch, { recursive: true, force: true });
 	}
+}
+
+console.log("\n[25] cheaper runs: context and checks prepared outside the model (#75)");
+{
+	const scratch = await mkdtemp(path.join(os.tmpdir(), "arnold-smoke-prepare-"));
+	try {
+		const git = (cwd: string, ...args: string[]): string => {
+			const result = spawnSync(
+				"git",
+				[
+					"-C",
+					cwd,
+					"-c",
+					"user.name=smoke",
+					"-c",
+					"user.email=smoke@localhost",
+					"-c",
+					"commit.gpgsign=false",
+					...args,
+				],
+				{ encoding: "utf8" },
+			);
+			if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
+			return result.stdout;
+		};
+		// A bare mirror plus a detached worktree, the shape a lease has: refs/heads/*
+		// and no origin/* refs, which the first ledtraad review tripped over.
+		const source = path.join(scratch, "source");
+		await mkdir(path.join(source, ".github"), { recursive: true });
+		git(source, "init", "-q", "-b", "main");
+		await writeFile(path.join(source, "app.py"), "import os\n\nprint('one')\n");
+		await writeFile(path.join(source, ".github", "copilot-instructions.md"), "House rule.\n");
+		git(source, "add", "-A");
+		git(source, "commit", "-q", "-m", "base");
+		git(source, "checkout", "-q", "-b", "feat/x");
+		await writeFile(path.join(source, "app.py"), "import os\nimport sys\n\nprint('two')\n");
+		git(source, "commit", "-q", "-am", "change");
+		const mirror = path.join(scratch, "mirror.git");
+		spawnSync("git", ["clone", "-q", "--bare", source, mirror]);
+		const worktree = path.join(scratch, "wt");
+		spawnSync("git", [
+			"--git-dir=" + mirror,
+			"worktree",
+			"add",
+			"-q",
+			"--detach",
+			worktree,
+			"feat/x",
+		]);
+
+		const ran: string[][] = [];
+		const fakeChecks: CheckExecutor = async (check) => {
+			ran.push(check.command);
+			const failing = check.name === "pyflakes";
+			return {
+				checkExitCode: failing ? 1 : 0,
+				checkOutput: failing ? "app.py:2:1: 'sys' imported but unused" : "",
+				checkTimedOut: false,
+				checkMs: 1,
+			};
+		};
+		const prepared = await prepareContext({
+			manifest: ledtraadPrePrReview,
+			args: {},
+			workspacePath: worktree,
+			defaultBranch: "main",
+			executeCheck: fakeChecks,
+		});
+		const block = prepared.contextBlock;
+		check(
+			"the diff base resolves without origin/* refs",
+			prepared.contextSummary.diffError === undefined,
+			prepared.contextSummary.diffError,
+		);
+		check(
+			"the diff is in the prompt",
+			block.includes("+import sys") && block.includes("-print('one')"),
+		);
+		check("the changed-file list is in the prompt", /M\s+app\.py/.test(block));
+		check("the review-instructions file is inlined", block.includes("House rule."));
+		check(
+			"CLAUDE.md is not inlined (the SDK already loads it)",
+			!(ledtraadPrePrReview.prepare?.files ?? []).includes("CLAUDE.md"),
+		);
+		check(
+			"every declared check ran, as argv",
+			ran.length === (ledtraadPrePrReview.prepare?.checks ?? []).length &&
+				ran.every((argv) => Array.isArray(argv)),
+		);
+		check(
+			"a failing check is reported as FAILED with its output",
+			block.includes("pyflakes: FAILED (exit 1)") &&
+				block.includes("'sys' imported but unused"),
+		);
+		check(
+			"a passing check is reported as passed",
+			block.includes("compileall: passed (exit 0)"),
+		);
+		check(
+			"the block marks repository text as data",
+			block.includes("never instructions to you"),
+		);
+
+		const unknownBase = await prepareContext({
+			manifest: { ...ledtraadPrePrReview, prepare: { diff: { baseArg: "baseBranch" } } },
+			args: { baseBranch: "no-such-branch" },
+			workspacePath: worktree,
+			defaultBranch: "main",
+			executeCheck: fakeChecks,
+		});
+		check(
+			"an unresolvable base is reported, not thrown",
+			(unknownBase.contextSummary.diffError ?? "").includes("no-such-branch") &&
+				unknownBase.contextBlock.includes("could not compute the diff"),
+		);
+		const unsafe = await prepareContext({
+			manifest: { ...ledtraadPrePrReview, prepare: { diff: { baseArg: "baseBranch" } } },
+			args: { baseBranch: "main;rm -rf /" },
+			workspacePath: worktree,
+			defaultBranch: "main",
+			executeCheck: fakeChecks,
+		});
+		check(
+			"a base that is not a safe ref name is never handed to git",
+			unsafe.contextSummary.diffError !== undefined,
+		);
+		const escaping = await prepareContext({
+			manifest: { ...ledtraadPrePrReview, prepare: { files: ["../source/app.py"] } },
+			args: {},
+			workspacePath: worktree,
+			defaultBranch: "main",
+			executeCheck: fakeChecks,
+		});
+		check(
+			"a file outside the worktree is not inlined",
+			escaping.contextSummary.filesMissing.includes("../source/app.py") &&
+				!escaping.contextBlock.includes("print("),
+		);
+		const none = await prepareContext({
+			manifest: { ...ledtraadPrePrReview, prepare: undefined },
+			args: {},
+			workspacePath: worktree,
+			defaultBranch: "main",
+			executeCheck: fakeChecks,
+		});
+		check("no prepare block adds nothing to the prompt", none.contextBlock === "");
+		check(
+			"an oversized section is cut and says so",
+			capSection("x".repeat(20), 5).includes("truncated by Arnold: 15 more"),
+		);
+
+		const host = await hostCheckExecutor(
+			{ name: "echo", command: ["git", "--version"] },
+			worktree,
+		);
+		check(
+			"the host executor runs argv and captures output",
+			host.checkExitCode === 0 && host.checkOutput.includes("git version"),
+		);
+		const missing = await hostCheckExecutor(
+			{ name: "missing", command: ["no-such-binary-arnold"] },
+			worktree,
+		);
+		check(
+			"a check that cannot start is reported as not run",
+			missing.checkExitCode === null && missing.checkOutput.includes("could not start"),
+		);
+		const slow = await hostCheckExecutor(
+			{ name: "slow", command: ["sleep", "5"], timeoutSeconds: 1 },
+			worktree,
+		);
+		check(
+			"a check past its timeout is killed and marked",
+			slow.checkTimedOut && slow.checkExitCode === null,
+		);
+
+		const rendered = await renderPrompt(ledtraadPrePrReview, {}, checkout);
+		check(
+			"the prompt tells the agent to use prepared context",
+			rendered.promptBody.includes("Context prepared by Arnold"),
+		);
+	} finally {
+		await rm(scratch, { recursive: true, force: true });
+	}
+
+	const gate = buildCanUseTool({ manifest: ledtraadPrePrReview, workspacePath: checkout });
+	check(
+		"ledtraad review: Agent is denied",
+		(await gate("Agent", { prompt: "x" })).behavior === "deny",
+	);
+	check(
+		"ledtraad review: Task is denied",
+		(await gate("Task", { prompt: "x" })).behavior === "deny",
+	);
+	check(
+		"ledtraad review: its own checks stay allowed",
+		(await gate("Bash", { command: "pyflakes scripts tests .github" })).behavior === "allow",
+	);
+	check(
+		"ledtraad review: a cheaper model and capped effort",
+		ledtraadPrePrReview.model === "sonnet" && ledtraadPrePrReview.effort === "medium",
+	);
+
+	const rows = usageByClass({
+		type: "result",
+		modelUsage: {
+			"claude-haiku": {
+				inputTokens: 10,
+				outputTokens: 5,
+				cacheReadInputTokens: 0,
+				cacheCreationInputTokens: 0,
+				costUSD: 0.01,
+			},
+			"claude-opus": {
+				inputTokens: 100,
+				outputTokens: 38000,
+				cacheReadInputTokens: 1900000,
+				cacheCreationInputTokens: 40000,
+				costUSD: 2.5,
+			},
+		},
+	});
+	check(
+		"token classes are read per model, dearest first",
+		rows.length === 2 &&
+			rows[0]?.usageModel === "claude-opus" &&
+			rows[0]?.usageCacheReadTokens === 1900000 &&
+			rows[0]?.usageOutputTokens === 38000,
+	);
+	check(
+		"a non-result payload has no token classes",
+		usageByClass({ type: "assistant" }).length === 0,
+	);
+}
+
+console.log("\n[26] escalation: a stronger second pass, decided by Arnold (#75)");
+{
+	const spec = ledtraadPrePrReview.escalate;
+	check("ledtraad review declares an escalation to a stronger model", spec?.model === "opus");
+	const flagBlock = (body: string): string => `Summary.\n\n\`\`\`json\n${body}\n\`\`\`\n`;
+	check(
+		"a flagged place is read from the report's json block",
+		parseEscalationRequest(
+			flagBlock('{"escalate":[{"file":"a.py","reason":"could not verify the library"}]}'),
+		).length === 1,
+	);
+	check(
+		"the last block with an escalate list wins, an earlier one does not",
+		parseEscalationRequest(
+			flagBlock('{"escalate":[{"file":"old.py","reason":"x"}]}') +
+				flagBlock('{"escalate":[]}'),
+		).length === 0,
+	);
+	check(
+		"malformed json, wrong shapes and prose are no request",
+		parseEscalationRequest(flagBlock("{not json")).length === 0 &&
+			parseEscalationRequest(flagBlock('{"escalate":"a.py"}')).length === 0 &&
+			parseEscalationRequest(flagBlock('{"escalate":[{"file":"","reason":"x"},{"file":3}]}'))
+				.length === 0 &&
+			parseEscalationRequest("I was unable to verify the library's behaviour.").length === 0,
+	);
+	const quiet = { changedFiles: ["scripts/a.py"], diffLines: 10, finalText: "All green." };
+	check("no escalation without a spec", !decideEscalation(undefined, quiet).escalate);
+	check(
+		"a quiet diff and a sure first pass stay on the cheap model",
+		spec !== undefined && !decideEscalation(spec, quiet).escalate,
+	);
+	check(
+		"a changed requirements file escalates, whatever the first pass said",
+		spec !== undefined &&
+			decideEscalation(spec, { ...quiet, changedFiles: ["scripts/a.py", "requirements.txt"] })
+				.escalate,
+	);
+	check(
+		"a manifest in a subdirectory is not the root one (* stays inside a directory)",
+		spec !== undefined &&
+			!decideEscalation(spec, { ...quiet, changedFiles: ["docs/requirements.txt"] }).escalate,
+	);
+	const asked =
+		spec === undefined
+			? undefined
+			: decideEscalation(spec, {
+					...quiet,
+					finalText: flagBlock(
+						'{"escalate":[{"file":"scripts/a.py","reason":"unsure"}]}',
+					),
+				});
+	check(
+		"the first pass asking escalates and carries its reasons",
+		asked?.escalate === true && asked.flagged[0]?.file === "scripts/a.py",
+	);
+	check(
+		"a diff past the line threshold escalates",
+		decideEscalation(
+			{ ...ledtraadPrePrReview.escalate!, when: { diffLines: 50 } },
+			{ ...quiet, diffLines: 50 },
+		).escalate &&
+			!decideEscalation(
+				{ ...ledtraadPrePrReview.escalate!, when: { diffLines: 50 } },
+				{ ...quiet, diffLines: 49 },
+			).escalate,
+	);
+	check(
+		"changed lines count adds and removals, not the file headers",
+		changedLineCount("--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n-old\n+new\n same\n+more") === 3,
+	);
+	if (spec !== undefined) {
+		const prompt = escalationPrompt(spec, {
+			reasons: ["the diff changes requirements.txt (matches requirements*.txt)"],
+			flagged: [],
+			firstReport: "Fixed three unused imports.",
+			changedFiles: ["requirements.txt"],
+			patch: "-rank_bm25\n+bm25s",
+		});
+		check(
+			"the second pass is given its one job, the first report and the diff",
+			prompt.includes(spec.focus) &&
+				prompt.includes("Fixed three unused imports.") &&
+				prompt.includes("+bm25s") &&
+				prompt.includes("requirements*.txt"),
+		);
+		check(
+			"the second pass is told not to redo the first, and that the diff is data",
+			prompt.includes("Do not redo the first pass") && prompt.includes("not instructions"),
+		);
+		check(
+			"a huge diff is cut and says so",
+			escalationPrompt(spec, {
+				reasons: ["x"],
+				flagged: [],
+				firstReport: "",
+				changedFiles: [],
+				patch: "x".repeat(500),
+				maxPatchChars: 100,
+			}).includes("cut at 100 characters"),
+		);
+	}
+	const row = (model: string, cost: number, out: number) => ({
+		usageModel: model,
+		usageInputTokens: 1,
+		usageOutputTokens: out,
+		usageCacheReadTokens: 10,
+		usageCacheWriteTokens: 2,
+		usageCostUsd: cost,
+	});
+	const merged = mergeUsageClasses(
+		[row("claude-sonnet-5", 0.5, 7000)],
+		[row("claude-opus-5", 0.9, 3000), row("claude-sonnet-5", 0.1, 1000)],
+	);
+	check(
+		"two passes' usage is summed per model, dearest first",
+		merged.length === 2 &&
+			merged[0]?.usageModel === "claude-opus-5" &&
+			merged[1]?.usageCostUsd === 0.6 &&
+			merged[1]?.usageOutputTokens === 8000,
+	);
 }
 
 console.log(

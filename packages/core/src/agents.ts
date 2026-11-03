@@ -79,6 +79,84 @@ export type ToolPolicy = {
 	mcpServers?: string[];
 	/** Extra deny patterns applied on top of the global denials. */
 	deniedPaths?: string[];
+	/**
+	 * Tool names removed from the model's tool list entirely, e.g. ["Agent", "Task"]
+	 * for a review agent that must not fan out into subagents (#75). Passed to the
+	 * SDK as `disallowedTools`, so the model never sees the tool and never spends a
+	 * turn on a call the gate would refuse anyway; `canUseTool` denies them too.
+	 */
+	disallowedTools?: string[];
+};
+
+/** Reasoning effort, passed straight to the SDK's `effort` option. */
+export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type EffortLevel = (typeof EFFORT_LEVELS)[number];
+
+/**
+ * One deterministic check Arnold runs before the model starts (#75). `command` is
+ * an argv, never a shell line: it is executed without a shell, in the same
+ * sandbox the agent would get, with the worktree as its cwd.
+ */
+export type PrepareCheck = {
+	/** Shown as the heading of this check's output in the prompt. */
+	name: string;
+	command: string[];
+	/** Seconds before the check is killed and reported as timed out. Default 120. */
+	timeoutSeconds?: number;
+};
+
+/**
+ * Context Arnold computes before the run and hands the agent in its prompt, so it
+ * starts with what it would otherwise spend turns discovering (#75): every turn
+ * re-reads the whole conversation, so 20 tool calls to find a diff cost far more
+ * than the diff itself.
+ *
+ * Everything here is read or run by Arnold, not the model. The diff and the files
+ * are read with git and the file system on the host; the checks run in the
+ * agent's own sandbox profile, so a check can reach exactly what the agent could.
+ */
+export type PrepareSpec = {
+	/**
+	 * Render `git diff <base>...HEAD`, the changed-file list and a diffstat. `baseArg`
+	 * names the argument holding the base branch (its default applies); without one,
+	 * the repo's default branch is the base.
+	 */
+	diff?: { baseArg?: string };
+	/** Repo files to inline, relative to the worktree root. A missing file is noted, not fatal. */
+	files?: string[];
+	/** Checks to run before the model starts. Output and exit codes go into the prompt. */
+	checks?: PrepareCheck[];
+	/** Cap per section, in characters, so one huge diff cannot become the cost. Default 60000. */
+	maxCharsPerSection?: number;
+};
+
+/**
+ * A second, stronger pass over a cheap first one (#75). The first pass runs on the
+ * manifest's own `model`; when a trigger fires, Arnold starts one more query in
+ * the same worktree on `model` below, with only `focus` as its job, the first
+ * pass's report and the diff, so it does not repeat the review.
+ *
+ * Triggers are Arnold's, not the model's, because a cheap model that misses a
+ * finding is not unsure about it: sonnet at medium read "takes the query's tokens
+ * and scores every document, as before" and passed it, against a library swap. So
+ * a trigger can also be a property of the diff.
+ */
+export type EscalateSpec = {
+	/** Model for the second pass, e.g. "opus". */
+	model: string;
+	effort?: EffortLevel;
+	/** Turns for the second pass alone. */
+	maxTurns: number;
+	/** What the second pass is for. The first pass's whole review is not its job. */
+	focus: string;
+	when: {
+		/** The first pass ends with a fenced json block `{"escalate":[{"file","reason"}]}`. */
+		agentFlags?: boolean;
+		/** The diff changes a file matching one of these globs (`*` stays inside a directory). */
+		changedPaths?: string[];
+		/** The diff changes at least this many lines (added plus removed). */
+		diffLines?: number;
+	};
 };
 
 /**
@@ -166,7 +244,18 @@ export type AgentManifest = {
 	 */
 	disabled?: { reason: string };
 	args: ArgSpec[];
+	/**
+	 * Model alias or id, e.g. "sonnet". Unset means the SDK default, which is the
+	 * top model with a 1M context: the reason the first ledtraad review cost $2.61.
+	 * Set it on every agent; reach for a deeper model only where depth is needed.
+	 */
 	model?: string;
+	/** Reasoning effort. Unset means the SDK default ("high"). Thinking is output, the dearest token class. */
+	effort?: EffortLevel;
+	/** Context Arnold computes before the run instead of letting the agent discover it. */
+	prepare?: PrepareSpec;
+	/** A stronger second pass for what the cheap first one cannot judge. */
+	escalate?: EscalateSpec;
 	tools: ToolPolicy;
 	writeScope: WriteScope;
 	mainBookkeeping?: MainBookkeeping;
