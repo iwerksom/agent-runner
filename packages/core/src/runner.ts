@@ -18,12 +18,19 @@ import { capturePatch } from "./changes.js";
 import { collectArtifacts, parseOutcome, snapshotArtifacts } from "./collect.js";
 import { knownFindingsContext, recordFindings } from "./findings.js";
 import { requiresSandbox } from "./hold.js";
-import { dockerSpawner, profileFor, resolveClaudeExecutable, sandboxEnabled } from "./sandbox.js";
+import {
+	dockerSpawner,
+	profileFor,
+	resolveClaudeExecutable,
+	sandboxEnabled,
+	type SandboxProfile,
+} from "./sandbox.js";
 import { prisma } from "./db.js";
 import { errorMessageOf, NotFoundError, ValidationError } from "./errors.js";
 import { parseJsonColumn, stringifyJsonColumn } from "./json.js";
 import { checkBudget, recordUsage } from "./ledger.js";
 import { recordProvenance } from "./notary.js";
+import { hostCheckExecutor, prepareContext, sandboxCheckExecutor } from "./prepare.js";
 import { renderPrompt } from "./prompt.js";
 import {
 	gateAsPreToolUseHook,
@@ -31,6 +38,7 @@ import {
 	isErrorResult,
 	messageText,
 	resultUsage,
+	usageByClass,
 	runEventTypeFor,
 } from "./sdkAdapter.js";
 import { buildCanUseTool, intersectToolPatterns } from "./writeScope.js";
@@ -120,6 +128,7 @@ export async function runAgent(runId: string): Promise<void> {
 	let usageTokens = 0;
 	let usageTurns = 0;
 	let usageRecorded = false;
+	let usageClasses: ReturnType<typeof usageByClass> = [];
 
 	try {
 		if (typeof manifest.id !== "string") {
@@ -168,12 +177,64 @@ export async function runAgent(runId: string): Promise<void> {
 			baseSha: lease.workspaceBaseSha,
 		});
 
+		// Opt-in while the sandbox is a spike (ARNOLD_SANDBOX=docker): the whole
+		// `claude` process runs in a container shaped by the manifest's write scope.
+		// A scope without a profile throws here, before anything runs. Built before
+		// the prompt because the prepare checks run in the same profile.
+		if (requiresSandbox(fullManifest.writeScope) && !sandboxEnabled()) {
+			// The dispatcher refuses this before a run exists; this is the same rule at
+			// the one place every execution passes through, for any caller that skips it.
+			throw new ValidationError(
+				`agent ${fullManifest.id} (${fullManifest.writeScope}) must run in the Docker sandbox, which is off (ARNOLD_SANDBOX=docker)`,
+				{ agentId: fullManifest.id },
+			);
+		}
+		let sandbox: { profile: SandboxProfile; claudeExecutable: string } | undefined;
+		if (sandboxEnabled()) {
+			const claudeExecutable = resolveClaudeExecutable();
+			sandbox = {
+				claudeExecutable,
+				profile: profileFor({
+					manifest: fullManifest,
+					workspacePath: lease.workspacePath,
+					mirrorPath: mirrorPathFor(run.repo.slug),
+					claudeExecutable,
+					repoSlug: run.repo.slug,
+					remoteUrl: run.repo.remoteUrl,
+				}),
+			};
+		}
+
 		const rendered = await renderPrompt(fullManifest, args, lease.workspacePath);
 		const { declaredTools } = rendered;
-		const promptBody =
+		const withFindings =
 			fullManifest.trackFindings === true && run.repoId !== null
 				? `${rendered.promptBody.trimEnd()}\n${await knownFindingsContext(run.repoId, run.agentId)}`
 				: rendered.promptBody;
+
+		// Context the agent would otherwise spend turns discovering (#75). Computed
+		// before the artifact baseline, so files a check writes are not mistaken for
+		// the agent's work.
+		const prepared = await prepareContext({
+			manifest: fullManifest,
+			args,
+			workspacePath: lease.workspacePath,
+			defaultBranch: run.repo.defaultBranch,
+			executeCheck:
+				sandbox === undefined
+					? hostCheckExecutor
+					: sandboxCheckExecutor(sandbox.profile, runId),
+		});
+		const promptBody =
+			prepared.contextBlock === ""
+				? withFindings
+				: `${withFindings.trimEnd()}\n${prepared.contextBlock}`;
+		if (fullManifest.prepare !== undefined) {
+			await appendRunEvent(runId, ++seq, "log", {
+				message: "prepared context",
+				...prepared.contextSummary,
+			});
+		}
 		const effectiveAllowList = intersectToolPatterns(
 			fullManifest.tools.allowedTools,
 			declaredTools,
@@ -243,12 +304,19 @@ export async function runAgent(runId: string): Promise<void> {
 			allowedTools: [],
 			permissionMode: fullManifest.tools.permissionMode,
 			maxTurns: fullManifest.budget.maxTurns,
+			// Removed from the model's tool list, not just refused when called: a
+			// refused Agent call still costs a turn, and the tool's definition costs
+			// tokens on every one (#75). canUseTool denies them as well.
+			...(fullManifest.tools.disallowedTools === undefined
+				? {}
+				: { disallowedTools: fullManifest.tools.disallowedTools }),
 			canUseTool,
 			// The same gate again, ahead of the CLI's own auto-approval of commands
 			// it judges read-only, which would otherwise never reach canUseTool.
 			hooks: { PreToolUse: [{ hooks: [gateAsPreToolUseHook(canUseTool)] }] },
 			abortController: inflight.abortController,
 			...(fullManifest.model === undefined ? {} : { model: fullManifest.model }),
+			...(fullManifest.effort === undefined ? {} : { effort: fullManifest.effort }),
 			// Opt-in tracing. A plugin installed with `--scope local` is bound to the
 			// checkout's own path, and a leased worktree never has that path, so
 			// `mlflow autolog claude` alone traces nothing here. Naming the plugin
@@ -259,32 +327,9 @@ export async function runAgent(runId: string): Promise<void> {
 				: {}),
 		};
 
-		// Opt-in while the sandbox is a spike (ARNOLD_SANDBOX=docker): the whole
-		// `claude` process runs in a container shaped by the manifest's write scope.
-		// A scope without a profile throws here, before anything runs.
-		if (requiresSandbox(fullManifest.writeScope) && !sandboxEnabled()) {
-			// The dispatcher refuses this before a run exists; this is the same rule at
-			// the one place every execution passes through, for any caller that skips it.
-			throw new ValidationError(
-				`agent ${fullManifest.id} (${fullManifest.writeScope}) must run in the Docker sandbox, which is off (ARNOLD_SANDBOX=docker)`,
-				{ agentId: fullManifest.id },
-			);
-		}
-		if (sandboxEnabled()) {
-			const claudeExecutable =
-				options.pathToClaudeCodeExecutable ?? resolveClaudeExecutable();
-			options.spawnClaudeCodeProcess = dockerSpawner(
-				profileFor({
-					manifest: fullManifest,
-					workspacePath: lease.workspacePath,
-					mirrorPath: mirrorPathFor(run.repo.slug),
-					claudeExecutable,
-					repoSlug: run.repo.slug,
-					remoteUrl: run.repo.remoteUrl,
-				}),
-				runId,
-			);
-			options.pathToClaudeCodeExecutable = claudeExecutable;
+		if (sandbox !== undefined) {
+			options.spawnClaudeCodeProcess = dockerSpawner(sandbox.profile, runId);
+			options.pathToClaudeCodeExecutable = sandbox.claudeExecutable;
 		}
 
 		let assistantText = "";
@@ -305,6 +350,7 @@ export async function runAgent(runId: string): Promise<void> {
 			const usage = resultUsage(message);
 			if (usage !== undefined) {
 				usageCostUsd = usage.resultCostUsd;
+				usageClasses = usageByClass(message);
 				usageTokens = usage.resultTokens;
 				usageTurns = usage.resultTurns;
 				resultWasError = isErrorResult(message);
@@ -361,6 +407,7 @@ export async function runAgent(runId: string): Promise<void> {
 			message: `collected ${artifactRows.length} artifact(s), recorded ${outcomeRows.length} outcome(s)`,
 			costUsd: usageCostUsd,
 			tokens: usageTokens,
+			usageByClass: usageClasses,
 		});
 
 		if (wallClockExpired) {

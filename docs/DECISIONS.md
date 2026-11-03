@@ -833,3 +833,36 @@ ledtraad's layer matches its static CI job, and `ledtraad-pre-pr-review` is boun
 an allow-list of exactly those commands (the example agent's names `tsc`, `vitest`, `eslint`).
 Not covered: the corpus, `.venv` and torch stack, so corpus-dependent checks are reported as
 not run. Not done: a first real run of the agent on a ledtraad branch.
+
+## 34. Arnold prepares what an agent would discover, and runs the checks itself
+
+Phase 3, issue #75. The first `ledtraad-pre-pr-review` run cost $2.61 for a 40-line
+diff: 47 turns on the default model, 21 Bash and 15 Read calls to find the diff, the
+conventions and the CI commands, and 27k of its 38k output tokens spent thinking. Every
+turn re-reads the conversation so far, so discovery is the expensive part, and none of
+it needed the model.
+
+**Decision:** a manifest may declare `prepare`: the branch diff (`diff.baseArg`), files
+to inline, and checks to run as argv. Arnold computes them before the query and appends
+a "Context prepared by Arnold" block to the prompt. The diff and files are read on the
+host with git and the file system; checks run in the agent's own sandbox profile (on the
+host only when the sandbox is off, which the runner already refuses for any scope that
+writes product code). Preparation never fails a run: a missing base or a timed-out check
+is written into the block as exactly that, and the agent can fall back to its tools.
+
+Alongside it: `model` and `effort` per manifest (unset means the top model at high
+effort, which is how the review got expensive), and `tools.disallowedTools`, passed to
+the SDK so the model never sees the tool and also refused by `canUseTool`. Review agents
+disallow `Agent` and `Task`: a subagent starts a fresh context and re-reads the repo.
+
+**Rejected:** letting the agent keep discovering, with a lower `maxTurns`. That caps the
+bill by stopping the review before it is done. **Not inlined:** `CLAUDE.md`, which
+`settingSources: ["project"]` already puts in the system prompt.
+
+**Visible, not guessed:** the run header shows cost per model and token class (input,
+cache read, cache write, output) from the persisted `result` event, so older runs show
+it too. Thinking is inside output; the SDK does not report it separately.
+
+**Open:** escalation (a cheap pass that hands a hard part to a stronger model) is not
+built; its trigger is still to be decided. The checks run on the unmodified branch, so
+an agent that fixes a failure re-runs that check itself.

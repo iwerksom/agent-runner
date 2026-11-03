@@ -7,6 +7,11 @@ Do a thorough local pre-PR review of this branch so the eventual automated
 review has little to flag. Base branch is $1 (defaults to the repo's default
 branch, `{{defaultBranch}}`, if omitted).
 
+If this prompt ends with a "Context prepared by Arnold" section, the diff, the
+changed files and the listed checks are already in it: skip step 1, take the
+check results from it in step 7, and spend your turns on steps 2 to 6. Do not
+fetch or re-run what it already shows.
+
 1. Show the diff vs the base: `git fetch origin ${1:-main}` then
    `git diff origin/${1:-main}...HEAD` (and list changed files).
 2. Review every change against BOTH:
@@ -88,7 +93,8 @@ branch, `{{defaultBranch}}`, if omitted).
    loop from re-surfacing the same theme round after round.
 6. For anything that's only subjective/minor, note it in the summary but do NOT
    change code for it (avoid churn that just invites more review comments).
-7. Verify with the project's own commands, as defined in the conventions file:
+7. Verify with the project's own commands, as defined in the conventions file
+   (when Arnold already ran them, re-run only those covering files you edited):
    the typecheck, the relevant unit tests for the changed paths, lint on the
    changed files, and the dead-code check. Fix real failures (ignore dead-code
    false positives that are pre-existing infra).

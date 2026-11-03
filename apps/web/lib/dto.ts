@@ -19,10 +19,13 @@ import {
 	effectiveExecution,
 	tierHold,
 	parseJsonColumn,
+	usageByClass,
+	type ModelUsageByClass,
 	type AgentKind,
 	type AgentManifest,
 	type AgentState,
 	type ArgSpec,
+	type EffortLevel,
 	type ExecutionMode,
 	type MainBookkeeping,
 	type OutcomeSpec,
@@ -143,6 +146,7 @@ export type AgentSummary = {
 	prompt?: PromptSource;
 	contextTemplate?: string;
 	model?: string;
+	effort?: EffortLevel;
 	tools?: ToolPolicy;
 	unattendedIfArgs?: string[];
 	artifactGlobs?: string[];
@@ -160,6 +164,11 @@ export type RunDetail = RunSummary & {
 	/** Recorded by the Notary on every lease; previously dropped by this mapper. */
 	workspaceId?: string;
 	baseRef?: string;
+	/**
+	 * Cost by model and token class, read off the run's last `result` event (#75).
+	 * Derived rather than stored, so runs recorded before this existed show it too.
+	 */
+	usageByClass: ModelUsageByClass[];
 };
 
 /* -------------------------------------------------------------------------- */
@@ -490,6 +499,7 @@ export function mapAgentSummary(row: AgentRowForDto, stats: AgentSummaryStats = 
 		prompt: manifest.prompt,
 		contextTemplate: manifest.contextTemplate,
 		model: manifest.model,
+		effort: manifest.effort,
 		tools: manifest.tools,
 		unattendedIfArgs: manifest.unattendedIfArgs,
 		artifactGlobs: manifest.artifactGlobs,
@@ -507,10 +517,13 @@ export function mapRunDetail(
 		workspacePath?: string;
 	},
 ): RunDetail {
+	const events = (row.events ?? []).map(mapRunEvent);
+	const lastResult = [...events].reverse().find((event) => event.type === "result");
 	return {
 		...mapRunSummary(row),
 		agent: relations.agent,
-		events: (row.events ?? []).map(mapRunEvent),
+		events,
+		usageByClass: lastResult === undefined ? [] : usageByClass(lastResult.payload),
 		artifacts: (row.artifacts ?? []).map(mapArtifact),
 		children: relations.children,
 		workspacePath: relations.workspacePath,

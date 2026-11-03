@@ -869,6 +869,15 @@ export function buildCanUseTool(input: BuildCanUseToolInput): CanUseToolFn {
 			};
 		}
 
+		// Rule 0b: tools this manifest removed from the model (#75). The SDK should
+		// never offer them, so reaching here means it did anyway; refuse by name.
+		if ((manifest.tools.disallowedTools ?? []).includes(toolName)) {
+			return {
+				behavior: "deny",
+				message: `tool ${toolName} is disallowed for this agent (tools.disallowedTools)`,
+			};
+		}
+
 		// Rule 2: the allow-list. Nothing gets past this point unmatched.
 		const matched = effectiveAllowList.some((pattern) =>
 			matchesToolPattern(pattern, toolName, toolInput),

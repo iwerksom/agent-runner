@@ -466,6 +466,7 @@ export function AgentManifestPanel({ agentManifestAgent }: { agentManifestAgent:
 							</span>
 							<span className="font-mono text-[11px] text-default-700">
 								{agent.model ?? "workspace default"}
+								{agent.effort === undefined ? "" : ` · effort ${agent.effort}`}
 							</span>
 						</div>
 

@@ -13,6 +13,18 @@
  *
  * `working-tree`, like the reference manifest: it edits files and never commits.
  * The id is `ledtraad-pre-pr-review` because `Agent.id` is global (#16).
+ *
+ * Cost (#75). The first run on `feat/bm25s-42`, a two-file 40-line diff, cost
+ * $2.61 in 47 turns on the default model: 21 Bash and 15 Read calls just to find
+ * the diff, the conventions and the CI commands, 27k of 38k output tokens spent
+ * thinking, and two subagents each starting a fresh context. So:
+ *   - `prepare` hands it the diff, the review-instructions file and the output of
+ *     every CI check, computed before the model starts. CLAUDE.md is not inlined:
+ *     `settingSources: ["project"]` already loads it into the system prompt.
+ *   - `model: "sonnet"` and `effort: "medium"`. The one finding that must not be
+ *     missed (the pyflakes failure) now arrives as check output, not as something
+ *     the model has to think its way to.
+ *   - No subagents, and `maxTurns` 20 instead of 40.
  */
 
 import type { AgentManifest } from "@arnold/core";
@@ -64,6 +76,27 @@ export const manifest: AgentManifest = {
 			"Bash(bash -n scripts/deploy_data.sh)",
 		],
 		permissionMode: "default",
+		// A review is one context. A subagent starts a fresh one and re-reads the repo.
+		disallowedTools: ["Agent", "Task"],
+	},
+	model: "sonnet",
+	effort: "medium",
+	// The same commands as the allow-list, run by Arnold before the model starts.
+	// The allow-list keeps them, so the agent can re-run one after an edit.
+	prepare: {
+		diff: { baseArg: "baseBranch" },
+		files: [".github/copilot-instructions.md"],
+		checks: [
+			{ name: "pyflakes", command: ["pyflakes", "scripts", "tests", ".github"] },
+			{
+				name: "compileall",
+				command: ["python", "-m", "compileall", "-q", "scripts", "tests", ".github"],
+			},
+			{ name: "test_reports", command: ["python", "tests/test_reports.py"] },
+			{ name: "test_query_stream", command: ["python", "tests/test_query_stream.py"] },
+			{ name: "validate_json", command: ["python", ".github/validate_json.py"] },
+			{ name: "deploy_data.sh syntax", command: ["bash", "-n", "scripts/deploy_data.sh"] },
+		],
 	},
 	writeScope: "working-tree",
 	scopeEnforcement: "manifest",
@@ -88,11 +121,12 @@ export const manifest: AgentManifest = {
 	],
 
 	reasonCodes: [],
-	budget: { dailyCostCapUsd: 4, maxTurns: 40, maxWallClockMinutes: 25 },
+	budget: { dailyCostCapUsd: 4, maxTurns: 20, maxWallClockMinutes: 25 },
 
 	notes: [
 		"Does not commit or push: no git write command is in the allow-list and the working-tree sandbox cannot write the mirror.",
 		"Runs in the ledtraad sandbox layer: Python and the static CI job's dependencies, but no corpus (data/ is not in git) and no .venv, so the golden set and location tests are out of reach and must be reported as not run.",
 		"Build the layer with pnpm sandbox:build before the first run.",
+		"Runs on sonnet at medium effort with the diff and CI check output precomputed (#75). The checks run on the unmodified branch before the model starts.",
 	],
 };
