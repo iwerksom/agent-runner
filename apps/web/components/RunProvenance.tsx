@@ -90,7 +90,11 @@ export function RunProvenance({ runProvenanceRun }: { runProvenanceRun: RunDetai
 							{run.branch}
 						</span>
 					) : (
-						<span className="text-default-400">no branch — nothing was pushed</span>
+						<span className="text-default-400">
+							{run.baseRef
+								? `none created by the agent (ran on ${run.baseRef})`
+								: "none created by the agent"}
+						</span>
 					)}
 				</ReceiptRow>
 

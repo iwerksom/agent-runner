@@ -24,7 +24,12 @@ import {
 } from "../packages/core/src/collect.js";
 import { atLeast, onChangesOf, onChangesProblem } from "../packages/core/src/agents.js";
 import { releasableInSoloMode, tierHold } from "../packages/core/src/hold.js";
-import { extractRunTicketKeys, extractTicketKeys } from "../packages/core/src/notary.js";
+import {
+	baseRefTicketKeys,
+	extractRunTicketKeys,
+	extractTicketKeys,
+	runTicketKeys,
+} from "../packages/core/src/notary.js";
 import { preflightPromptValues, renderPrompt, validateArgs } from "../packages/core/src/prompt.js";
 import {
 	gateAsPreToolUseHook,
@@ -494,6 +499,94 @@ console.log("\n[11] notary: a run records the ticket it was dispatched against")
 	check(
 		"a hex colour in the transcript is still not a key when args are declared",
 		extractRunTicketKeys(["#482"], "background: #123456;").join(",") === "#482",
+	);
+
+	// The base ref names the ticket whether or not the agent prints it (#73).
+	const ledtraad = "iwerksom/ledtraad";
+	const same = (got: string[], want: string[]): boolean => got.join(",") === want.join(",");
+	check(
+		"a base ref ending -42 names issue 42, qualified with the repo",
+		same(baseRefTicketKeys("feat/bm25s-42", [], ledtraad), ["iwerksom/ledtraad#42"]),
+	);
+	check(
+		"a commit subject ending (#42) names issue 42",
+		same(baseRefTicketKeys("feat/bm25s", ["perf(8.2): rank_bm25 -> bm25s (#42)"], ledtraad), [
+			"iwerksom/ledtraad#42",
+		]),
+	);
+	check(
+		"the branch name and the commit subject together give one key",
+		same(
+			baseRefTicketKeys("feat/bm25s-42", ["perf(8.2): rank_bm25 -> bm25s (#42)"], ledtraad),
+			["iwerksom/ledtraad#42"],
+		),
+	);
+	check(
+		"a ref with no trailing number gives none",
+		baseRefTicketKeys("feat/bm25s", [], ledtraad).length === 0 &&
+			baseRefTicketKeys("v2", [], ledtraad).length === 0 &&
+			baseRefTicketKeys("feat/42-bm25s", [], ledtraad).length === 0,
+	);
+	check(
+		"a Jira-shaped ref gives its key and not a bare number",
+		same(baseRefTicketKeys("feat/PROJ-42", [], "acme/app"), ["PROJ-42"]) &&
+			same(baseRefTicketKeys("feat/PROJ-42-fix-7", [], "acme/app"), ["PROJ-42"]),
+	);
+	check(
+		"a repo with no GitHub remote keeps Jira keys and drops bare numbers",
+		same(baseRefTicketKeys("feat/thing-42", ["Fix it (#42) for PROJ-9"], undefined), [
+			"PROJ-9",
+		]),
+	);
+	check(
+		"a cross-repo reference in a subject keeps its own repo",
+		same(baseRefTicketKeys("feat/x", ["Bump (other/lib#7)"], ledtraad), ["other/lib#7"]),
+	);
+	check(
+		"declared arguments lead, then the base ref, then the transcript",
+		same(
+			runTicketKeys({
+				declaredArgValues: ["PROJ-1"],
+				transcriptText: "also WO-3",
+				baseRef: "feat/bm25s-42",
+				commitSubjects: [],
+				githubRepo: ledtraad,
+			}),
+			["PROJ-1", "iwerksom/ledtraad#42", "WO-3"],
+		),
+	);
+	check(
+		"the agent printing #42 adds no second key beside the qualified one",
+		same(
+			runTicketKeys({
+				declaredArgValues: [],
+				transcriptText: "the commit closes #42; unrelated #7",
+				baseRef: "feat/bm25s-42",
+				commitSubjects: [],
+				githubRepo: ledtraad,
+			}),
+			["iwerksom/ledtraad#42", "#7"],
+		),
+	);
+	check(
+		"a declared #42 is the same ticket as the base ref's, recorded qualified",
+		same(
+			runTicketKeys({
+				declaredArgValues: ["#42"],
+				transcriptText: undefined,
+				baseRef: "feat/bm25s-42",
+				commitSubjects: [],
+				githubRepo: ledtraad,
+			}),
+			["iwerksom/ledtraad#42"],
+		),
+	);
+	check(
+		"with no base ref the result is the declared arguments and the transcript, as before",
+		same(
+			runTicketKeys({ declaredArgValues: ["#482"], transcriptText: "PROJ-2 and #482" }),
+			extractRunTicketKeys(["#482"], "PROJ-2 and #482"),
+		),
 	);
 }
 

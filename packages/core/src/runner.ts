@@ -465,7 +465,12 @@ export async function runAgent(runId: string): Promise<void> {
 		const declaredArgValues = fullManifest.args
 			.map((arg) => args[arg.name])
 			.filter((value): value is string => typeof value === "string");
-		await recordProvenance(runId, lease.workspacePath, assistantText, declaredArgValues);
+		await recordProvenance(runId, lease.workspacePath, assistantText, declaredArgValues, {
+			baseRef: lease.workspaceBaseRef,
+			baseSha: lease.workspaceBaseSha,
+			defaultBranch: run.repo.defaultBranch,
+			remoteUrl: run.repo.remoteUrl,
+		});
 		// After the Notary, because it writes the branch and head columns from the
 		// worktree, and a delivered branch is recorded over them. Only for a run that
 		// finished its work: a cancelled, timed-out or failed run keeps its patch, and
