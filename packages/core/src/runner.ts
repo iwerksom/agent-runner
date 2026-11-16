@@ -250,6 +250,7 @@ export async function runAgent(runId: string): Promise<void> {
 			// gate cannot see the diff it is supposed to be vetting.
 			defaultBranch: run.repo.defaultBranch,
 			readBookkeepingPaths,
+			sandboxed: sandbox !== undefined,
 		});
 
 		// Taken before the loop, so collection can tell this run's files from the

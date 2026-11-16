@@ -907,5 +907,25 @@ added a skip-if-absent test pinning the `get_scores` contract. It could not read
 tests skip); the focus said to read it, now corrected. The 2.5x score-scale gap was still not
 named as such.
 
+**The second pass reads the libraries (2026-11-16).** The 2.5x gap stayed missing for a plain
+reason: it is a line in the library's formula (bm25s `robertson` has no `(k1 + 1)` in the
+numerator, rank_bm25 does), and nothing in the sandbox could read either library. The baseline
+had found it from the top model's memory at high effort. Two changes: `tools.readRoots`, absolute
+paths in the sandbox image that Read, Grep and Glob may open besides the worktree (honoured only
+in the sandbox, lexical, never a write target, `/` refused), and ledtraad's image carries the
+pinned source of both libraries under `/opt/reference`, installed `--no-deps` off `sys.path` so
+`import bm25s` still fails as in CI. The focus now makes the pass list every behavioural
+difference of a swapped library (formula and scale, defaults, edge cases, return shape) and who
+consumes each. **Rejected:** installing the libraries into the venv, which would make the
+sandbox's checks pass where CI's cannot, and opening `/opt/venv` whole.
+
+Measured on the same branch: **$1.55 in 44 turns** ($0.64 sonnet, $0.92 opus), 10 reads under
+`/opt/reference`. It found the 2.5x scale and who sees it (`chunk["score"]` in keyword mode; RRF
+does not), the IDF floor, and one thing no earlier run had: `bm25s.get_scores([])` raises
+IndexError where rank_bm25 returned zeros, so a question of only stop-words would 500; it fixed
+that with a guard. It did not flag the stale "both lanes" comments this time (the run before
+did). Against the baseline's $1.97 to $2.61 that is 20 to 40 percent cheaper, not a small
+fraction: the saving is in the first pass, and a library swap is the dear case by design.
+
 **Not done:** the escalated model is not scored against known findings (feature 4.3), so
 "as good" is still compared by hand. Escalation has not been run on a second repo.

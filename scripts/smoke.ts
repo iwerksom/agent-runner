@@ -44,7 +44,7 @@ import {
 	type CheckExecutor,
 } from "../packages/core/src/prepare.js";
 import { manifest as ledtraadPrePrReview } from "../registry/ledtraad/pre-pr-review.js";
-import { buildCanUseTool } from "../packages/core/src/writeScope.js";
+import { buildCanUseTool, isUnderReadRoot } from "../packages/core/src/writeScope.js";
 import {
 	artifactDirOf,
 	dockerArgs,
@@ -2034,6 +2034,43 @@ console.log("\n[26] escalation: a stronger second pass, decided by Arnold (#75)"
 		usageCacheWriteTokens: 2,
 		usageCostUsd: cost,
 	});
+	{
+		const readGate = (sandboxed: boolean) =>
+			buildCanUseTool({
+				manifest: ledtraadPrePrReview,
+				workspacePath: process.cwd(),
+				sandboxed,
+			});
+		const read = async (sandboxed: boolean, file_path: string) =>
+			(await readGate(sandboxed)("Read", { file_path })).behavior;
+		check(
+			"in the sandbox, the library source under a read root can be read",
+			(await read(true, "/opt/reference/bm25s/scoring.py")) === "allow" &&
+				(await readGate(true)("Grep", { pattern: "k1", path: "/opt/reference" }))
+					.behavior === "allow",
+		);
+		check(
+			"outside the sandbox the same path is the host's, and stays refused",
+			(await read(false, "/opt/reference/bm25s/scoring.py")) === "deny",
+		);
+		check(
+			"a read root does not open its neighbours, .. out of it, or a .env inside it",
+			(await read(true, "/opt/venv/pyvenv.cfg")) === "deny" &&
+				(await read(true, "/opt/reference/../../etc/passwd")) === "deny" &&
+				(await read(true, "/opt/referenceX/a.py")) === "deny" &&
+				(await read(true, "/opt/reference/.env")) === "deny",
+		);
+		check(
+			"a read root is never a write target",
+			(await readGate(true)("Write", { file_path: "/opt/reference/x.py", content: "" }))
+				.behavior === "deny",
+		);
+		check(
+			'"/" as a read root opens nothing',
+			!isUnderReadRoot("/etc/passwd", ["/"]) &&
+				isUnderReadRoot("/opt/reference", ["/opt/reference/"]),
+		);
+	}
 	const merged = mergeUsageClasses(
 		[row("claude-sonnet-5", 0.5, 7000)],
 		[row("claude-opus-5", 0.9, 3000), row("claude-sonnet-5", 0.1, 1000)],

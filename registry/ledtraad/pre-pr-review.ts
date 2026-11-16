@@ -81,6 +81,8 @@ export const manifest: AgentManifest = {
 		permissionMode: "default",
 		// A review is one context. A subagent starts a fresh one and re-reads the repo.
 		disallowedTools: ["Agent", "Task"],
+		// Library source for the escalation pass to read (sandbox/images/ledtraad.Dockerfile).
+		readRoots: ["/opt/reference"],
 	},
 	model: "sonnet",
 	effort: "medium",
@@ -111,7 +113,11 @@ export const manifest: AgentManifest = {
 		model: "opus",
 		effort: "medium",
 		maxTurns: 30,
-		focus: "Compare every docstring and comment that the diff touches, or that describes code the diff changes, with what the code and the library it calls actually do. Where a claim is about a library, do not trust its name: say what you know of its behaviour and what you could not confirm (the installed packages are outside the workspace and cannot be read, and the library may not be installed in this image at all), and where a test could pin the claim, write one that skips when the library is absent. Fix claims that are wrong or incomplete, in the same way the first pass fixes comments, and list each with the behaviour that contradicts it.",
+		focus: [
+			"Check every docstring and comment that the diff touches, or that describes code the diff changes, against what the code and the libraries it calls actually do. Fix claims that are wrong or incomplete, and list each with the behaviour that contradicts it.",
+			"When the diff replaces or upgrades a library, do this first: list every behavioural difference between the old and the new one for the calls this code makes. Go through each of these and write down what you found, including 'no difference': the formula, and so the scale and sign of the numbers returned; defaults that are no longer set or mean something else; edge cases (negative, zero, empty, a term in most documents); the type, shape and order of what comes back. For each difference, find who consumes the value (follow the callers to the endpoint or file that hands it on) and say whether they see a change. A docstring that says the swap behaves 'as before' must name every difference you listed.",
+			"Read the libraries, do not recall them: the source of the pinned versions is under /opt/reference (read-only; Read and Grep work there with an absolute path, nothing else outside the worktree does). It is not importable, on purpose, so do not try to run it.",
+		].join("\n\n"),
 		when: {
 			agentFlags: true,
 			changedPaths: ["requirements*.txt", "pyproject.toml", "package.json"],

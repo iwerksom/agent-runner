@@ -86,6 +86,18 @@ export type ToolPolicy = {
 	 * turn on a call the gate would refuse anyway; `canUseTool` denies them too.
 	 */
 	disallowedTools?: string[];
+	/**
+	 * Absolute paths inside the sandbox image that Read, Grep and Glob may open in
+	 * addition to the worktree, e.g. ["/opt/reference"] for the source of a library
+	 * the repo depends on (#75: a review could not tell that a replacement library
+	 * scales its scores differently, because it could not read either one).
+	 *
+	 * Read-only by construction: writes are still confined to the worktree, and the
+	 * image's root is mounted read-only. Honoured only in the sandbox, where the
+	 * path names the image's own files; on the host the same path would be the
+	 * operator's machine, so an unsandboxed run ignores this list.
+	 */
+	readRoots?: string[];
 };
 
 /** Reasoning effort, passed straight to the SDK's `effort` option. */
