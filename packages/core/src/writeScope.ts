@@ -67,6 +67,12 @@ export type BuildCanUseToolInput = {
 	 */
 	defaultBranch?: string;
 	readBookkeepingPaths?: BookkeepingPathReader;
+	/**
+	 * The run executes in the Docker sandbox. Only then are `tools.readRoots`
+	 * honoured: they name paths in the image, and outside it the same path is the
+	 * host's.
+	 */
+	sandboxed?: boolean;
 };
 
 /** Tools that read files by path. Confined to the worktree by `denyReadTarget`. */
@@ -210,6 +216,24 @@ export function intersectToolPatterns(
 export function toolNameOfPattern(pattern: string): string {
 	const parenthesised = /^([^(]+)\(/.exec(pattern);
 	return (parenthesised?.[1] ?? pattern).trim();
+}
+
+/**
+ * Whether an absolute path lies under one of the manifest's `readRoots`. Lexical
+ * on purpose: the roots are paths in the sandbox image, which this process (on
+ * the host) cannot stat, so there is no symlink to resolve here. `..` is settled
+ * by normalising first, and a root must be absolute and deeper than `/`, so a
+ * manifest cannot open the whole container by listing "/".
+ */
+export function isUnderReadRoot(target: string, readRoots: readonly string[]): boolean {
+	if (!target.startsWith("/")) return false;
+	const normalised = path.posix.normalize(target);
+	if (normalised.split("/").some(isEnvSecretName)) return false;
+	return readRoots.some((root) => {
+		const cleanRoot = path.posix.normalize(root).replace(/\/+$/, "");
+		if (!cleanRoot.startsWith("/") || cleanRoot === "") return false;
+		return normalised === cleanRoot || normalised.startsWith(`${cleanRoot}/`);
+	});
 }
 
 /**
@@ -605,6 +629,7 @@ function issueEditOverreachIn(segment: string): string | undefined {
  */
 export function buildCanUseTool(input: BuildCanUseToolInput): CanUseToolFn {
 	const { manifest, workspacePath, declaredTools, defaultBranch, readBookkeepingPaths } = input;
+	const readRoots = input.sandboxed === true ? (manifest.tools.readRoots ?? []) : [];
 	const scope = manifest.writeScope;
 	// Rule 1: intersect once, at build time, so every decision uses one list.
 	const effectiveAllowList = intersectToolPatterns(manifest.tools.allowedTools, declaredTools);
@@ -802,6 +827,7 @@ export function buildCanUseTool(input: BuildCanUseToolInput): CanUseToolFn {
 		}
 		// Grep and Glob with no path search the working directory.
 		for (const target of named) {
+			if (isUnderReadRoot(target, readRoots)) continue;
 			const real = realpathOfExistingPart(path.resolve(workspacePath, target));
 			const relative = path.relative(root, real);
 			if (relative.startsWith("..") || path.isAbsolute(relative)) {
@@ -866,6 +892,15 @@ export function buildCanUseTool(input: BuildCanUseToolInput): CanUseToolFn {
 			return {
 				behavior: "deny",
 				message: `tool ${toolName} is denied for every agent at every scope; this repo's allow-lists are written in Bash, so run shell commands through Bash instead`,
+			};
+		}
+
+		// Rule 0b: tools this manifest removed from the model (#75). The SDK should
+		// never offer them, so reaching here means it did anyway; refuse by name.
+		if ((manifest.tools.disallowedTools ?? []).includes(toolName)) {
+			return {
+				behavior: "deny",
+				message: `tool ${toolName} is disallowed for this agent (tools.disallowedTools)`,
 			};
 		}
 

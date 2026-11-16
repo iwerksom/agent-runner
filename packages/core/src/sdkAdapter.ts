@@ -158,6 +158,78 @@ export function resultUsage(message: SDKMessage): ResultUsage | undefined {
 	return { resultCostUsd, resultTokens, resultTurns };
 }
 
+/**
+ * One model's share of a run, by token class (#75). The classes are priced very
+ * differently — output costs several times input, a cache read a tenth of it —
+ * so "1.9M tokens" says nothing about where $2.61 went, and this does.
+ *
+ * Thinking is not a separate class here: the SDK folds extended thinking into
+ * `outputTokens`, and no field on the result splits it out.
+ */
+export type ModelUsageByClass = {
+	usageModel: string;
+	usageInputTokens: number;
+	usageOutputTokens: number;
+	usageCacheReadTokens: number;
+	usageCacheWriteTokens: number;
+	usageCostUsd: number;
+};
+
+/**
+ * Per-model token classes off a result message, or off a persisted result
+ * event's payload (the same object). Most expensive model first. Empty for
+ * anything that is not a result, and for a result without `modelUsage`.
+ */
+export function usageByClass(message: unknown): ModelUsageByClass[] {
+	const record = asRecord(message);
+	if (stringAt(record, "type") !== "result") return [];
+	const modelUsage = asRecord(record?.["modelUsage"]);
+	if (modelUsage === undefined) return [];
+	const rows: ModelUsageByClass[] = [];
+	for (const [model, perModel] of Object.entries(modelUsage)) {
+		const usage = asRecord(perModel);
+		rows.push({
+			usageModel: model,
+			usageInputTokens: numberAt(usage, "inputTokens") ?? 0,
+			usageOutputTokens: numberAt(usage, "outputTokens") ?? 0,
+			usageCacheReadTokens: numberAt(usage, "cacheReadInputTokens") ?? 0,
+			usageCacheWriteTokens: numberAt(usage, "cacheCreationInputTokens") ?? 0,
+			usageCostUsd: numberAt(usage, "costUSD") ?? 0,
+		});
+	}
+	return rows.sort((a, b) => b.usageCostUsd - a.usageCostUsd);
+}
+
+/**
+ * Two passes of one run, summed per model. A second pass on a stronger model adds
+ * a row; one on the same model adds to its row. Most expensive first, like
+ * `usageByClass`.
+ */
+export function mergeUsageClasses(
+	first: readonly ModelUsageByClass[],
+	second: readonly ModelUsageByClass[],
+): ModelUsageByClass[] {
+	const byModel = new Map<string, ModelUsageByClass>();
+	for (const row of [...first, ...second]) {
+		const seen = byModel.get(row.usageModel);
+		byModel.set(
+			row.usageModel,
+			seen === undefined
+				? { ...row }
+				: {
+						usageModel: row.usageModel,
+						usageInputTokens: seen.usageInputTokens + row.usageInputTokens,
+						usageOutputTokens: seen.usageOutputTokens + row.usageOutputTokens,
+						usageCacheReadTokens: seen.usageCacheReadTokens + row.usageCacheReadTokens,
+						usageCacheWriteTokens:
+							seen.usageCacheWriteTokens + row.usageCacheWriteTokens,
+						usageCostUsd: seen.usageCostUsd + row.usageCostUsd,
+					},
+		);
+	}
+	return [...byModel.values()].sort((a, b) => b.usageCostUsd - a.usageCostUsd);
+}
+
 /** The SDK throws AbortError (not DOMException) when its controller is aborted. */
 export function isAbortError(caught: unknown): boolean {
 	if (caught instanceof Error) {

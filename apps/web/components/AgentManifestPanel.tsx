@@ -466,6 +466,10 @@ export function AgentManifestPanel({ agentManifestAgent }: { agentManifestAgent:
 							</span>
 							<span className="font-mono text-[11px] text-default-700">
 								{agent.model ?? "workspace default"}
+								{agent.effort === undefined ? "" : ` · effort ${agent.effort}`}
+								{agent.escalate === undefined
+									? ""
+									: ` → ${agent.escalate.model}${agent.escalate.effort === undefined ? "" : ` · effort ${agent.escalate.effort}`} on a trigger`}
 							</span>
 						</div>
 

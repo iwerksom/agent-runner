@@ -17,6 +17,17 @@ RUN apt-get update \
  && /opt/venv/bin/pip install --no-cache-dir --disable-pip-version-check \
       "fastapi==0.139.0" "pydantic==2.13.4" uvicorn numpy httpx "anthropic==0.116.0" pyflakes
 
+# Source to read, not to import (#75). A review of a library swap has to compare
+# what the old and the new library compute, and could not: neither is in the CI
+# job's dependencies above. Installed with --no-deps into a directory that is not
+# on sys.path, so `import bm25s` still fails exactly as it does in CI and the
+# checks keep meaning what they mean there. The manifest opens this directory to
+# Read and Grep with `tools.readRoots`. Pin to requirements.txt; rank_bm25 is the
+# library bm25s replaced (ledtraad #42) and stays until that swap is settled.
+RUN /opt/venv/bin/pip install --no-cache-dir --disable-pip-version-check --no-deps \
+      --target /opt/reference "bm25s==0.3.15" "rank_bm25==0.2.2" \
+ && chmod -R a+rX /opt/reference
+
 # Runs as the host user with a read-only root, so the venv is only ever read and
 # `.pyc` files go nowhere (PYTHONDONTWRITEBYTECODE) instead of failing.
 ENV PATH=/opt/venv/bin:$PATH \

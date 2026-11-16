@@ -7,6 +7,25 @@ Do a thorough local pre-PR review of this branch so the eventual automated
 review has little to flag. Base branch is $1 (defaults to the repo's default
 branch, `{{defaultBranch}}`, if omitted).
 
+If this prompt ends with a "Context prepared by Arnold" section, the diff, the
+changed files and the listed checks are already in it: skip step 1, take the
+check results from it in step 7, and spend your turns on steps 2 to 6. Do not
+fetch or re-run what it already shows.
+
+You have a limited number of turns (about 30), and a run that ends without a
+summary is a failed run. Work in this order and stop exploring early:
+
+- Read the changed files and what they call. Do not read the virtualenv or
+  installed packages (`/opt/venv`, `.venv`): the dependencies are installed and
+  the check results already say whether they import.
+- Do not use `ToolSearch`, `git log --all`, or `git fetch origin` (the worktree's
+  `origin` is not reachable; the base branch is local).
+- Run one command per Bash call, exactly as allow-listed. Chained commands
+  (`;`, `&&`, `|`, `echo`) are refused and cost a turn.
+- Once your edits are done, re-run only the checks covering them, then write the
+  step 8 summary. If you are down to your last 4 turns, write the summary now,
+  including any pass you did not finish.
+
 1. Show the diff vs the base: `git fetch origin ${1:-main}` then
    `git diff origin/${1:-main}...HEAD` (and list changed files).
 2. Review every change against BOTH:
@@ -88,13 +107,26 @@ branch, `{{defaultBranch}}`, if omitted).
    loop from re-surfacing the same theme round after round.
 6. For anything that's only subjective/minor, note it in the summary but do NOT
    change code for it (avoid churn that just invites more review comments).
-7. Verify with the project's own commands, as defined in the conventions file:
+7. Verify with the project's own commands, as defined in the conventions file
+   (when Arnold already ran them, re-run only those covering files you edited):
    the typecheck, the relevant unit tests for the changed paths, lint on the
    changed files, and the dead-code check. Fix real failures (ignore dead-code
    false positives that are pre-existing infra).
 8. Summarize: what you fixed, what you deliberately left (with reasons), and
    confirm the verification results. Do NOT push or open the PR unless asked —
    just leave the branch clean and ready.
+
+    If there is a place you could not judge with confidence (a comment about how
+    a library or another module behaves that you could not verify from what you
+    read, a contract you inferred), end the summary with a fenced json block
+    naming it, so a stronger second pass can look at just that:
+
+    ```json
+    { "escalate": [{ "file": "path/to/file", "reason": "what you could not verify" }] }
+    ```
+
+    Leave the block out when you are sure. Saying "I was unable to verify" in
+    prose does nothing; only the block starts the second pass.
 
 Goal: make the first automated review pass converge quickly. Front-load the
 substantive fixes here — especially the adversarial and doc-drift passes, which
