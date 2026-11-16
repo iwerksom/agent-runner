@@ -22,7 +22,7 @@ import {
 	resolveReportVerdict,
 	snapshotArtifacts,
 } from "../packages/core/src/collect.js";
-import { atLeast } from "../packages/core/src/agents.js";
+import { atLeast, onChangesOf, onChangesProblem } from "../packages/core/src/agents.js";
 import { releasableInSoloMode, tierHold } from "../packages/core/src/hold.js";
 import { extractRunTicketKeys, extractTicketKeys } from "../packages/core/src/notary.js";
 import { preflightPromptValues, renderPrompt, validateArgs } from "../packages/core/src/prompt.js";
@@ -56,7 +56,12 @@ import {
 } from "../packages/core/src/sandbox.js";
 import {
 	applyPatchFile,
+	arnoldCommitIdentity,
+	commitWorktreeChanges,
 	computeWorktreePatch,
+	deliverWorktreeChanges,
+	fastForwardBlocker,
+	runBranchName,
 	patchApplyBlocker,
 	patchFiles,
 } from "../packages/core/src/changes.js";
@@ -1685,6 +1690,286 @@ console.log("\n[24] a run's changes become a patch, applied only where it is saf
 			((await patchApplyBlocker(second, "feat/x", patchFile)) ?? "").includes(
 				"no longer applies",
 			),
+		);
+	} finally {
+		await rm(scratch, { recursive: true, force: true });
+	}
+}
+
+console.log(
+	"\n[24b] onChanges: Arnold commits a run's changes, and fast-forwards only a branch that has not moved (#79)",
+);
+{
+	const scratch = await mkdtemp(path.join(os.tmpdir(), "arnold-smoke-onchanges-"));
+	try {
+		const git = (cwd: string, ...args: string[]): string => {
+			const result = spawnSync(
+				"git",
+				[
+					"-C",
+					cwd,
+					"-c",
+					"user.name=operator",
+					"-c",
+					"user.email=operator@localhost",
+					"-c",
+					"commit.gpgsign=false",
+					...args,
+				],
+				{ encoding: "utf8" },
+			);
+			if (result.status !== 0) throw new Error(`git ${args.join(" ")}: ${result.stderr}`);
+			return result.stdout;
+		};
+		const identity = { name: "Arnold", email: "arnold@localhost" };
+
+		// The manifest field.
+		const reviewer = { id: "reviewer", writeScope: "working-tree" as const };
+		check("onChanges defaults to patch", onChangesOf(reviewer) === "patch");
+		check(
+			"branch and commit are accepted on a working-tree agent",
+			onChangesProblem({ ...reviewer, onChanges: "branch" }) === undefined &&
+				onChangesOf({ ...reviewer, onChanges: "commit" }) === "commit",
+		);
+		check(
+			"an unknown mode is refused, and runs as patch",
+			(onChangesProblem({ ...reviewer, onChanges: "push" }) ?? "").includes(
+				"must be one of",
+			) && onChangesOf({ ...reviewer, onChanges: "push" }) === "patch",
+		);
+		check(
+			"branch on an agent that is not working-tree is refused, and runs as patch",
+			(
+				onChangesProblem({ id: "wq", writeScope: "draft-pr", onChanges: "branch" }) ?? ""
+			).includes("working-tree agents only") &&
+				onChangesOf({ id: "wq", writeScope: "draft-pr", onChanges: "branch" }) === "patch",
+		);
+		check(
+			"ledtraad-pre-pr-review stays on patch",
+			onChangesOf(ledtraadPrePrReview) === "patch",
+		);
+		check(
+			"no registered manifest has a bad onChanges",
+			Object.values(registryManifestsBySlug)
+				.flat()
+				.every((manifest) => onChangesProblem(manifest) === undefined),
+		);
+		check(
+			"the commit identity comes from ARNOLD_GIT_NAME and ARNOLD_GIT_EMAIL, with a default",
+			arnoldCommitIdentity({ ARNOLD_GIT_NAME: "Bot", ARNOLD_GIT_EMAIL: "bot@x" }).email ===
+				"bot@x" && arnoldCommitIdentity({}).name === "Arnold",
+		);
+
+		// A checkout, and a run worktree detached at its branch tip, as a lease is.
+		const newCheckout = async (
+			name: string,
+		): Promise<{ checkout: string; baseSha: string }> => {
+			const checkout = path.join(scratch, name);
+			await mkdir(checkout, { recursive: true });
+			git(checkout, "init", "-q", "-b", "feat/x");
+			await writeFile(path.join(checkout, "README.md"), "one\ntwo\nthree\n");
+			await writeFile(path.join(checkout, ".gitignore"), "ignored.txt\n");
+			git(checkout, "add", "-A");
+			git(checkout, "commit", "-q", "-m", "base");
+			return { checkout, baseSha: git(checkout, "rev-parse", "HEAD").trim() };
+		};
+		const newWorktree = async (
+			name: string,
+			checkout: string,
+			baseSha: string,
+			edit: boolean,
+		): Promise<string> => {
+			const worktree = path.join(scratch, name);
+			git(scratch, "clone", "-q", checkout, worktree);
+			git(worktree, "checkout", "-q", "--detach", baseSha);
+			if (edit) {
+				await writeFile(path.join(worktree, "README.md"), "one\nTWO\nthree\n");
+				await mkdir(path.join(worktree, "tests"), { recursive: true });
+				await writeFile(path.join(worktree, "tests", "new_test.py"), "print('hi')\n");
+				await writeFile(path.join(worktree, "ignored.txt"), "secret\n");
+			}
+			return worktree;
+		};
+		const deliver = (
+			mode: "branch" | "commit",
+			worktree: string,
+			checkout: string | undefined,
+			baseSha: string,
+			runId: string,
+		) =>
+			deliverWorktreeChanges({
+				mode,
+				workspacePath: worktree,
+				baseRef: "feat/x",
+				baseSha,
+				localPath: checkout,
+				agentId: "reviewer",
+				runId,
+				identity,
+			});
+
+		// branch
+		const a = await newCheckout("a");
+		const quiet = await newWorktree("a-quiet", a.checkout, a.baseSha, false);
+		check(
+			"a run that changed nothing delivers nothing and creates no branch",
+			(await deliver("branch", quiet, a.checkout, a.baseSha, "run0")) === undefined &&
+				git(a.checkout, "branch", "--list", "arnold/*").trim() === "",
+		);
+		const wtA = await newWorktree("a-run", a.checkout, a.baseSha, true);
+		const branchResult = await deliver("branch", wtA, a.checkout, a.baseSha, "run1");
+		const runBranch = runBranchName("reviewer", "run1");
+		check(
+			"branch: the result names arnold/<agent>/<run> and its commit",
+			branchResult?.reached === "branch" &&
+				branchResult.branch === "arnold/reviewer/run1" &&
+				branchResult.note === undefined,
+			JSON.stringify(branchResult),
+		);
+		check(
+			"branch: the commit is in the checkout under that name, one commit on the base",
+			git(a.checkout, "rev-parse", runBranch).trim() === branchResult?.commitSha &&
+				git(a.checkout, "rev-parse", `${runBranch}^`).trim() === a.baseSha,
+		);
+		check(
+			"branch: the checkout's own branch, index and files are untouched",
+			git(a.checkout, "rev-parse", "HEAD").trim() === a.baseSha &&
+				git(a.checkout, "symbolic-ref", "--short", "HEAD").trim() === "feat/x" &&
+				git(a.checkout, "status", "--porcelain").trim() === "" &&
+				(await readFile(path.join(a.checkout, "README.md"), "utf8")) ===
+					"one\ntwo\nthree\n",
+		);
+		const committedFiles = git(a.checkout, "show", "--name-only", "--format=", runBranch)
+			.trim()
+			.split("\n");
+		check(
+			"branch: the commit carries the edit and the new file, not the gitignored one",
+			committedFiles.includes("README.md") &&
+				committedFiles.includes("tests/new_test.py") &&
+				!committedFiles.includes("ignored.txt"),
+			committedFiles.join(", "),
+		);
+		const header = git(a.checkout, "log", "-1", "--format=%an <%ae>|%cn|%s|%b", runBranch);
+		check(
+			"branch: Arnold is author and committer, and the message names the agent and the run",
+			header.startsWith(
+				"Arnold <arnold@localhost>|Arnold|reviewer: changes from run run1|",
+			) &&
+				header.includes("Run: run1") &&
+				header.includes("Base: feat/x @ "),
+			header,
+		);
+		check(
+			"branch: the worktree is left as the run left it (detached at the base, nothing staged, edits in place)",
+			git(wtA, "rev-parse", "HEAD").trim() === a.baseSha &&
+				git(wtA, "diff", "--cached", "--name-only").trim() === "" &&
+				git(wtA, "diff", "--name-only").trim() === "README.md",
+		);
+		check(
+			"the patch of the same worktree is unchanged by the commit",
+			patchFiles(await computeWorktreePatch(wtA, a.baseSha)).length === 2,
+		);
+		let secondCommitRefused = false;
+		try {
+			await commitWorktreeChanges({
+				workspacePath: wtA,
+				baseSha: a.baseSha,
+				branch: runBranch,
+				message: "again",
+				identity,
+			});
+		} catch {
+			secondCommitRefused = true;
+		}
+		check("an existing run branch is never overwritten", secondCommitRefused);
+		const noCheckout = await deliver("branch", wtA, undefined, a.baseSha, "run2");
+		check(
+			"branch with no checkout: committed in the mirror only, and says so",
+			noCheckout?.reached === "mirror" &&
+				(noCheckout.note ?? "").includes("no local checkout") &&
+				git(wtA, "rev-parse", "arnold/reviewer/run2").trim() === noCheckout.commitSha,
+			JSON.stringify(noCheckout),
+		);
+
+		// commit
+		const b = await newCheckout("b");
+		const wtB = await newWorktree("b-run", b.checkout, b.baseSha, true);
+		const ff = await deliver("commit", wtB, b.checkout, b.baseSha, "run3");
+		check(
+			"commit: a clean checkout still at the base is fast-forwarded",
+			ff?.reached === "commit" &&
+				git(b.checkout, "rev-parse", "HEAD").trim() === ff.commitSha &&
+				git(b.checkout, "symbolic-ref", "--short", "HEAD").trim() === "feat/x" &&
+				git(b.checkout, "status", "--porcelain").trim() === "" &&
+				(await readFile(path.join(b.checkout, "README.md"), "utf8")) ===
+					"one\nTWO\nthree\n",
+			JSON.stringify(ff),
+		);
+		check(
+			"commit: it is a fast-forward, one commit whose only parent is the base",
+			git(b.checkout, "rev-list", "--parents", "-1", "HEAD").trim() ===
+				`${ff?.commitSha} ${b.baseSha}`,
+		);
+
+		const c = await newCheckout("c");
+		const wtC = await newWorktree("c-run", c.checkout, c.baseSha, true);
+		await writeFile(path.join(c.checkout, "other.txt"), "moved on\n");
+		git(c.checkout, "add", "-A");
+		git(c.checkout, "commit", "-q", "-m", "moved on");
+		const movedTip = git(c.checkout, "rev-parse", "HEAD").trim();
+		const moved = await deliver("commit", wtC, c.checkout, c.baseSha, "run4");
+		check(
+			"commit: a branch that moved is not fast-forwarded; it falls back to branch and says why",
+			moved?.reached === "branch" &&
+				(moved.note ?? "").includes("has moved since the run started") &&
+				git(c.checkout, "rev-parse", "HEAD").trim() === movedTip &&
+				git(c.checkout, "rev-parse", "arnold/reviewer/run4").trim() === moved.commitSha,
+			JSON.stringify(moved),
+		);
+		check(
+			"commit: the moved branch got no merge commit and its files are untouched",
+			git(c.checkout, "rev-list", "--merges", "--count", "HEAD").trim() === "0" &&
+				(await readFile(path.join(c.checkout, "README.md"), "utf8")) ===
+					"one\ntwo\nthree\n",
+		);
+
+		const d = await newCheckout("d");
+		const wtD = await newWorktree("d-run", d.checkout, d.baseSha, true);
+		await writeFile(path.join(d.checkout, "scratch.txt"), "dirty\n");
+		const dirty = await deliver("commit", wtD, d.checkout, d.baseSha, "run5");
+		check(
+			"commit: a dirty tree falls back to branch",
+			dirty?.reached === "branch" &&
+				(dirty.note ?? "").includes("uncommitted changes") &&
+				git(d.checkout, "rev-parse", "HEAD").trim() === d.baseSha,
+			JSON.stringify(dirty),
+		);
+		await rm(path.join(d.checkout, "scratch.txt"));
+		git(d.checkout, "checkout", "-q", "-b", "elsewhere");
+		check(
+			"commit: another branch checked out is a blocker",
+			((await fastForwardBlocker(d.checkout, "feat/x", d.baseSha)) ?? "").includes(
+				'is on "elsewhere"',
+			),
+		);
+		git(d.checkout, "checkout", "-q", "--detach");
+		check(
+			"commit: a detached HEAD is a blocker",
+			((await fastForwardBlocker(d.checkout, "feat/x", d.baseSha)) ?? "").includes(
+				"detached",
+			),
+		);
+		const notARepo = await deliver(
+			"commit",
+			wtD,
+			path.join(scratch, "missing"),
+			d.baseSha,
+			"run6",
+		);
+		check(
+			"a checkout that cannot be fetched into leaves the commit in the mirror, and does not throw",
+			notARepo?.reached === "mirror" && (notARepo.note ?? "").includes("could not fetch"),
+			JSON.stringify(notARepo),
 		);
 	} finally {
 		await rm(scratch, { recursive: true, force: true });

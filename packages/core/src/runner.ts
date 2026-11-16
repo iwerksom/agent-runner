@@ -12,9 +12,9 @@
 
 import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
 import type { Agent, Repo, Run } from "@prisma/client";
-import { isTerminalStatus, type AgentManifest } from "./agents.js";
+import { isTerminalStatus, onChangesOf, type AgentManifest } from "./agents.js";
 import { publishRunEvent, publishRunStatus } from "./bus.js";
-import { capturePatch } from "./changes.js";
+import { capturePatch, deliverRunChanges } from "./changes.js";
 import { collectArtifacts, parseOutcome, snapshotArtifacts } from "./collect.js";
 import { knownFindingsContext, recordFindings } from "./findings.js";
 import { requiresSandbox } from "./hold.js";
@@ -466,6 +466,33 @@ export async function runAgent(runId: string): Promise<void> {
 			.map((arg) => args[arg.name])
 			.filter((value): value is string => typeof value === "string");
 		await recordProvenance(runId, lease.workspacePath, assistantText, declaredArgValues);
+		// After the Notary, because it writes the branch and head columns from the
+		// worktree, and a delivered branch is recorded over them. Only for a run that
+		// finished its work: a cancelled, timed-out or failed run keeps its patch, and
+		// half a review is never committed or fast-forwarded into the checkout.
+		const onChanges = onChangesOf(fullManifest);
+		if (
+			onChanges !== "patch" &&
+			!wallClockExpired &&
+			!inflight.cancelRequested &&
+			!resultWasError
+		) {
+			const delivery = await deliverRunChanges({
+				mode: onChanges,
+				runId,
+				agentId: run.agentId,
+				workspacePath: lease.workspacePath,
+				baseRef: lease.workspaceBaseRef,
+				baseSha: lease.workspaceBaseSha,
+				localPath: run.repo.localPath ?? undefined,
+			});
+			if (delivery !== undefined) {
+				await appendRunEvent(runId, ++seq, "log", {
+					message: "delivered changes",
+					...delivery,
+				});
+			}
+		}
 		await recordUsage(["global", `agent:${run.agentId}`, `repo:${run.repo.slug}`], {
 			cost: usageCostUsd,
 			tokens: usageTokens,

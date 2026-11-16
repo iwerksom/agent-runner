@@ -33,9 +33,28 @@ function ReceiptRow({
 	);
 }
 
+/** What Arnold did with the run's changes, in one line (feature 3.2). */
+function deliverySentence(
+	delivery: NonNullable<RunDetail["changesDelivery"]>,
+	baseRef: string | undefined,
+): string {
+	const commit = shortSha(delivery.commitSha) ?? "a commit";
+	switch (delivery.reached) {
+		case "commit":
+			return `${baseRef ?? "the checkout's branch"} fast-forwarded to ${commit}`;
+		case "branch":
+			return `committed as ${commit}; the branch is in the checkout, whose own branch is untouched`;
+		case "mirror":
+			return `committed as ${commit}; the branch is only in Arnold's mirror`;
+		case "nothing":
+			return "not committed; the patch is the only copy";
+	}
+}
+
 export function RunProvenance({ runProvenanceRun }: { runProvenanceRun: RunDetail }) {
 	const run = runProvenanceRun;
 	const base = shortSha(run.baseSha);
+	const delivery = run.changesDelivery;
 
 	return (
 		<section className="arnold-receipt rounded-large border border-dashed border-default-300 bg-content1 p-4">
@@ -74,6 +93,17 @@ export function RunProvenance({ runProvenanceRun }: { runProvenanceRun: RunDetai
 						<span className="text-default-400">no branch — nothing was pushed</span>
 					)}
 				</ReceiptRow>
+
+				{delivery ? (
+					<ReceiptRow receiptRowLabel="Changes">
+						<span className="flex flex-col gap-0.5">
+							<span>{deliverySentence(delivery, run.baseRef)}</span>
+							{delivery.note ? (
+								<span className="text-default-400">{delivery.note}</span>
+							) : undefined}
+						</span>
+					</ReceiptRow>
+				) : undefined}
 
 				<ReceiptRow receiptRowLabel="Pull request">
 					{run.prUrl ? (

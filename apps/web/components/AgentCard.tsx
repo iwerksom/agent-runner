@@ -99,6 +99,28 @@ export function AgentCard({
 							<AgentStateChip agentState={agent.state} />
 						) : undefined}
 						{agent.ingestsUntrustedInput ? <UntrustedInputBadge /> : undefined}
+						{agent.onChanges !== undefined ? (
+							<Tooltip
+								content={
+									agent.onChanges === "patch"
+										? "Changes are stored as a patch and applied from the run page."
+										: agent.onChanges === "branch"
+											? "Arnold commits changes on arnold/<agent>/<run> and fetches the branch into the checkout."
+											: "Arnold commits changes and fast-forwards the checkout's branch when it has not moved."
+								}
+								delay={200}
+							>
+								<span className="inline-flex">
+									<Chip
+										size="sm"
+										variant="bordered"
+										classNames={{ content: "text-xs" }}
+									>
+										on changes: {agent.onChanges}
+									</Chip>
+								</span>
+							</Tooltip>
+						) : undefined}
 						{agent.invocable === "child" ? (
 							<Chip size="sm" variant="bordered" classNames={{ content: "text-xs" }}>
 								child-only
