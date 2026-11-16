@@ -133,6 +133,10 @@ model Run {
   prNumber    Int?
   /// JSON-TEXT string[] of ticket keys found in the transcript
   ticketKeys  String?
+  /// JSON-TEXT ChangesDelivery: how a working-tree run's changes were delivered
+  /// when the agent's onChanges is "branch" or "commit" (feature 3.2). Null for
+  /// "patch", and for a run that changed nothing.
+  changesDelivery String?
 
   startedAt  DateTime?
   endedAt    DateTime?

@@ -17,6 +17,7 @@
 
 import {
 	effectiveExecution,
+	onChangesOf,
 	tierHold,
 	parseJsonColumn,
 	usageByClass,
@@ -26,9 +27,11 @@ import {
 	type AgentManifest,
 	type AgentState,
 	type ArgSpec,
+	type ChangesDelivery,
 	type EffortLevel,
 	type ExecutionMode,
 	type MainBookkeeping,
+	type OnChanges,
 	type OutcomeSpec,
 	type PromptSource,
 	type RunStatus,
@@ -104,6 +107,8 @@ export type RunSummary = {
 	prUrl?: string;
 	prNumber?: number;
 	ticketKeys: string[];
+	/** How the run's changes were delivered, for an agent whose `onChanges` is not "patch" (#79). */
+	changesDelivery?: ChangesDelivery;
 	outcomes: RunOutcomeDto[];
 	artifactCount: number;
 	childCount: number;
@@ -150,6 +155,8 @@ export type AgentSummary = {
 	effort?: EffortLevel;
 	/** The stronger second pass, when the manifest declares one (#75). */
 	escalate?: { model: string; effort?: EffortLevel };
+	/** How a `working-tree` agent's changes reach the checkout; absent at other scopes. */
+	onChanges?: OnChanges;
 	tools?: ToolPolicy;
 	unattendedIfArgs?: string[];
 	artifactGlobs?: string[];
@@ -242,6 +249,7 @@ export type RunRowForDto = {
 	prUrl: string | null;
 	prNumber: number | null;
 	ticketKeys: string | null;
+	changesDelivery?: string | null;
 	startedAt: Date | string | null;
 	endedAt: Date | string | null;
 	costUsd: number;
@@ -299,6 +307,29 @@ function toStringArray(value: unknown): string[] {
 	return Array.isArray(value)
 		? value.filter((entry): entry is string => typeof entry === "string")
 		: [];
+}
+
+/** The `changesDelivery` column, or undefined when it is empty or not the expected shape. */
+function toChangesDelivery(value: unknown): ChangesDelivery | undefined {
+	if (typeof value !== "object" || value === null) return undefined;
+	const record = value as Record<string, unknown>;
+	const { mode, reached, branch, commitSha, note } = record;
+	if (mode !== "branch" && mode !== "commit") return undefined;
+	if (
+		reached !== "nothing" &&
+		reached !== "mirror" &&
+		reached !== "branch" &&
+		reached !== "commit"
+	) {
+		return undefined;
+	}
+	return {
+		mode,
+		reached,
+		...(typeof branch === "string" ? { branch } : {}),
+		...(typeof commitSha === "string" ? { commitSha } : {}),
+		...(typeof note === "string" ? { note } : {}),
+	};
 }
 
 /** Reads a relation count from `_count` first, falling back to a loaded array. */
@@ -406,6 +437,7 @@ export function mapRunSummary(row: RunRowForDto): RunSummary {
 		prUrl: row.prUrl ?? undefined,
 		prNumber: row.prNumber ?? undefined,
 		ticketKeys: toStringArray(parseJsonColumn<unknown>(row.ticketKeys, [])),
+		changesDelivery: toChangesDelivery(parseJsonColumn<unknown>(row.changesDelivery, null)),
 		outcomes: (row.outcomes ?? []).map((outcomeRow) => ({
 			outcome: outcomeRow.outcome,
 			reasonCode: outcomeRow.reasonCode ?? undefined,
@@ -503,6 +535,14 @@ export function mapAgentSummary(row: AgentRowForDto, stats: AgentSummaryStats = 
 		contextTemplate: manifest.contextTemplate,
 		model: manifest.model,
 		effort: manifest.effort,
+		onChanges:
+			manifest.id !== undefined && manifest.writeScope === "working-tree"
+				? onChangesOf({
+						id: manifest.id,
+						writeScope: manifest.writeScope,
+						onChanges: manifest.onChanges,
+					})
+				: undefined,
 		escalate:
 			manifest.escalate === undefined
 				? undefined

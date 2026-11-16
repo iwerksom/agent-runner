@@ -172,6 +172,23 @@ export type EscalateSpec = {
 };
 
 /**
+ * How a `working-tree` run's changes reach the repo's checkout (feature 3.2).
+ * Arnold delivers them after the run, on the host; the agent never holds a git
+ * write for it. Ordered least to most intrusive:
+ *
+ *   patch   stored as `changes.patch`, applied from the run page on a click
+ *   branch  committed on `arnold/<agent>/<run>` and fetched into the checkout as
+ *           a ref; the checkout's own branch is untouched
+ *   commit  as `branch`, then the checkout's branch is fast-forwarded, only when
+ *           it is still exactly where the run started
+ *
+ * Pushing is not a mode here: it needs a token, and stays the `branch-push`
+ * write scope (DECISIONS #35).
+ */
+export const ON_CHANGES_MODES = ["patch", "branch", "commit"] as const;
+export type OnChanges = (typeof ON_CHANGES_MODES)[number];
+
+/**
  * One argument, mapped to the slot the prompt body actually reads. Getting
  * `slot` wrong is the most likely silent breakage, because the prompt reads
  * positionals and will happily run with the wrong value substituted.
@@ -270,6 +287,8 @@ export type AgentManifest = {
 	escalate?: EscalateSpec;
 	tools: ToolPolicy;
 	writeScope: WriteScope;
+	/** `working-tree` only. Unset means "patch": nothing reaches the checkout without a click. */
+	onChanges?: OnChanges;
 	mainBookkeeping?: MainBookkeeping;
 	scopeEnforcement: ScopeEnforcement;
 	execution: ExecutionMode;
@@ -374,6 +393,40 @@ export const GLOBAL_DENIED_WRITE_GLOBS = [
  * agent and a `git push`. One shell is cheaper to reason about than two.
  */
 export const GLOBAL_DENIED_TOOLS = ["PowerShell"] as const;
+
+/**
+ * What is wrong with a manifest's `onChanges`, or undefined when it is fine.
+ * TypeScript checks a manifest written in `registry/`; this checks the same
+ * thing for one read back from the Agent row's JSON, and adds the rule the type
+ * cannot express: only a `working-tree` agent has changes for Arnold to deliver.
+ * Below it nothing is edited, and above it the agent commits for itself.
+ */
+export function onChangesProblem(
+	manifest: Pick<AgentManifest, "id" | "writeScope"> & { onChanges?: unknown },
+): string | undefined {
+	const value = manifest.onChanges;
+	if (value === undefined) return undefined;
+	if (typeof value !== "string" || !(ON_CHANGES_MODES as readonly string[]).includes(value)) {
+		return `${manifest.id}: onChanges must be one of ${ON_CHANGES_MODES.join(", ")}, not ${JSON.stringify(value)}`;
+	}
+	if (value !== "patch" && manifest.writeScope !== "working-tree") {
+		return `${manifest.id}: onChanges "${value}" applies to working-tree agents only, and this one is ${manifest.writeScope}`;
+	}
+	return undefined;
+}
+
+/**
+ * The delivery mode a run uses. Anything that fails `onChangesProblem` is
+ * "patch", the mode that changes nothing on its own, so a bad value read from
+ * the database can never move a branch.
+ */
+export function onChangesOf(
+	manifest: Pick<AgentManifest, "id" | "writeScope"> & { onChanges?: unknown },
+): OnChanges {
+	if (manifest.writeScope !== "working-tree") return "patch";
+	if (onChangesProblem(manifest) !== undefined) return "patch";
+	return (manifest.onChanges as OnChanges | undefined) ?? "patch";
+}
 
 /** Minimum role required to trigger an agent at a given write scope. */
 export function minimumRoleFor(scope: WriteScope): "viewer" | "operator" | "admin" {

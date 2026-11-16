@@ -16,9 +16,9 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Agent, Repo } from "@prisma/client";
 import { manifestsForRepoSlug } from "../../../registry/index.js";
-import type { AgentKind, AgentManifest } from "./agents.js";
+import { onChangesProblem, type AgentKind, type AgentManifest } from "./agents.js";
 import { prisma } from "./db.js";
-import { NotFoundError } from "./errors.js";
+import { NotFoundError, ValidationError } from "./errors.js";
 import { parseJsonColumn, stringifyJsonColumn } from "./json.js";
 import { parsePromptFile } from "./prompt.js";
 
@@ -159,6 +159,13 @@ export async function syncRegistry(repoSlug: string): Promise<SyncRegistryResult
 		result.driftWarnings.push(
 			`checkout for ${repoSlug} is not on disk (localPath=${checkoutPath ?? "unset"}); prompt files were not verified, so orphan and unregistered detection was skipped`,
 		);
+	}
+
+	// Refused before any row is written, so a bad delivery mode never reaches the
+	// database half-synced.
+	for (const manifest of manifests) {
+		const problem = onChangesProblem(manifest);
+		if (problem !== undefined) throw new ValidationError(problem, { agentId: manifest.id });
 	}
 
 	for (const manifest of manifests) {

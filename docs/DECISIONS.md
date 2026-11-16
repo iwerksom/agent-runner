@@ -929,3 +929,40 @@ fraction: the saving is in the first pass, and a library swap is the dear case b
 
 **Not done:** the escalated model is not scored against known findings (feature 4.3), so
 "as good" is still compared by hand. Escalation has not been run on a second repo.
+
+## 35. `onChanges` delivers a working-tree run's changes; pushing stays a write scope
+
+Phase 3, feature 3.2, issue #79. A `working-tree` agent edits a worktree in Arnold's
+mirror and may not commit. After #78 its changes reach the checkout as a patch, on a
+click. Some agents are trusted enough that the click is only a delay.
+
+**Decision:** a manifest field `onChanges`, `patch` (default), `branch` or `commit`, for
+`working-tree` agents only. `syncRegistry` refuses any other value, and anything but
+`patch` at another scope; a bad value read back from the database runs as `patch`.
+
+- `branch`: Arnold commits the changes on `arnold/<agent>/<run>` and fetches that branch
+  into the checkout. The checkout's own branch, index and files are untouched.
+- `commit`: as `branch`, then `git merge --ff-only` in the checkout, only when the run's
+  base branch is checked out, its tip is still the run's base commit and the tree is
+  clean. Otherwise the result is `branch`, with the reason recorded.
+
+Arnold does this on the host after the run, not the agent in the sandbox, so the agent's
+limits do not change: no git writes, a read-only mirror. The commit is built with
+plumbing (`read-tree`, `add` into a throwaway index, `commit-tree`, `update-ref`), so no
+hook runs and the worktree stays as the run left it. The message is written by Arnold
+from the agent id, the run id and the base; the author is `ARNOLD_GIT_NAME` and
+`ARNOLD_GIT_EMAIL` (default `Arnold <arnold@localhost>`), never the operator's identity.
+Only a run that succeeded is delivered: a cancelled, timed-out or failed run keeps its
+patch and nothing else. The patch is stored in every mode.
+
+**`push` is not a mode.** Pushing needs a token and reaches a remote, which is what the
+`branch-push` write scope and its sandbox profile exist to gate (DECISIONS #30). A
+delivery setting that pushed would be a second, ungated way to the same place.
+
+The run row records the branch and commit in the Notary's `branch` and `headSha`
+columns, and how far the delivery got in a new column, `Run.changesDelivery` (run
+`pnpm db:generate && pnpm db:push` after pulling).
+
+**Not done:** no agent uses `branch` or `commit` yet (`ledtraad-pre-pr-review` stays on
+`patch`), so neither has been seen on a real run or in a browser; `pnpm smoke` covers
+the git work against throwaway repos.

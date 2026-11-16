@@ -473,6 +473,22 @@ export function AgentManifestPanel({ agentManifestAgent }: { agentManifestAgent:
 							</span>
 						</div>
 
+						{agent.onChanges === undefined ? undefined : (
+							<div className="flex flex-col gap-1">
+								<span className="text-[10px] uppercase tracking-wider text-default-400">
+									On changes
+								</span>
+								<span className="font-mono text-[11px] text-default-700">
+									{agent.onChanges}
+									{agent.onChanges === "patch"
+										? " · applied from the run page"
+										: agent.onChanges === "branch"
+											? " · committed to arnold/<agent>/<run>"
+											: " · fast-forwards the checkout when it has not moved"}
+								</span>
+							</div>
+						)}
+
 						<div className="flex flex-col gap-1">
 							<span className="text-[10px] uppercase tracking-wider text-default-400">
 								Invocable

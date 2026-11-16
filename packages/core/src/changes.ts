@@ -10,17 +10,26 @@
  * run's base branch, a clean tree. It never commits, never switches branches and
  * never touches a dirty tree.
  *
+ * `onChanges: "branch"` and `"commit"` go further without a click (#79): Arnold
+ * commits the changes on `arnold/<agent>/<run>` and fetches that branch into the
+ * checkout, and for `commit` fast-forwards the checkout's branch when it has not
+ * moved since the run started. The commit is Arnold's, message and author; the
+ * model writes neither. Nothing here merges, rebases, forces or pushes.
+ *
  * The git work is split from the database work so the smoke test can run it
  * against throwaway repos without a Run row.
  */
 
 import { execFile } from "node:child_process";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { Artifact } from "@prisma/client";
+import type { OnChanges } from "./agents.js";
 import { prisma } from "./db.js";
 import { NotFoundError, ValidationError } from "./errors.js";
+import { stringifyJsonColumn } from "./json.js";
 import { artifactRoot } from "./paths.js";
 
 const execFileAsync = promisify(execFile);
@@ -31,10 +40,11 @@ const MAX_PATCH_BYTES = 5 * 1024 * 1024;
 export const PATCH_ARTIFACT_PATH = "changes.patch";
 export const PATCH_ARTIFACT_KIND = "patch";
 
-async function git(cwd: string, args: string[]): Promise<string> {
+async function git(cwd: string, args: string[], env?: Record<string, string>): Promise<string> {
 	try {
 		const { stdout } = await execFileAsync("git", ["-C", cwd, ...args], {
 			maxBuffer: 64 * 1024 * 1024,
+			...(env === undefined ? {} : { env: { ...process.env, ...env } }),
 		});
 		return stdout.toString();
 	} catch (caught: unknown) {
@@ -122,6 +132,279 @@ export function patchFiles(patchText: string): string[] {
 		if (file !== undefined) files.push(file);
 	}
 	return files;
+}
+
+/** Who Arnold's commits are by. Never the operator's own git identity. */
+export type CommitIdentity = { name: string; email: string };
+
+/** `ARNOLD_GIT_NAME` and `ARNOLD_GIT_EMAIL`, with a default that cannot be mistaken for a person. */
+export function arnoldCommitIdentity(
+	env: Record<string, string | undefined> = process.env,
+): CommitIdentity {
+	const name = env["ARNOLD_GIT_NAME"]?.trim();
+	const email = env["ARNOLD_GIT_EMAIL"]?.trim();
+	return {
+		name: name === undefined || name === "" ? "Arnold" : name,
+		email: email === undefined || email === "" ? "arnold@localhost" : email,
+	};
+}
+
+/** `arnold/<agent>/<run>`: one branch per run, so two runs never share a ref. */
+export function runBranchName(agentId: string, runId: string): string {
+	return `arnold/${agentId}/${runId}`;
+}
+
+/** Arnold's commit message for a run's changes. Facts about the run, no model text. */
+export function runCommitMessage(input: {
+	agentId: string;
+	runId: string;
+	baseRef: string;
+	baseSha: string;
+}): string {
+	return [
+		`${input.agentId}: changes from run ${input.runId}`,
+		"",
+		`Agent: ${input.agentId}`,
+		`Run: ${input.runId}`,
+		`Base: ${input.baseRef} @ ${input.baseSha.slice(0, 7)}`,
+		"",
+		"Committed by Arnold after the run. The agent did not write this message.",
+	].join("\n");
+}
+
+/**
+ * Commit the worktree's changes on top of `baseSha` and point `branch` at the
+ * commit, in the repository the worktree belongs to. Returns the commit sha, or
+ * undefined when there is nothing to commit.
+ *
+ * Built with plumbing and a throwaway index, so the worktree is left exactly as
+ * the run left it: HEAD stays detached at the base, nothing is staged, and
+ * `git diff` there still shows the run's edits. No hook runs, because
+ * `commit-tree` has none. Gitignored files stay out, as they do in the patch.
+ * The branch must not exist yet; a run id is never reused, so one that does is
+ * not this run's.
+ */
+export async function commitWorktreeChanges(input: {
+	workspacePath: string;
+	baseSha: string;
+	branch: string;
+	message: string;
+	identity: CommitIdentity;
+}): Promise<string | undefined> {
+	const { workspacePath, baseSha, branch, message, identity } = input;
+	await git(workspacePath, ["check-ref-format", "--branch", branch]);
+	const scratch = await mkdtemp(path.join(os.tmpdir(), "arnold-index-"));
+	try {
+		const index = { GIT_INDEX_FILE: path.join(scratch, "index") };
+		await git(workspacePath, ["read-tree", baseSha], index);
+		await git(workspacePath, ["add", "-A", "--", "."], index);
+		const tree = (await git(workspacePath, ["write-tree"], index)).trim();
+		const baseTree = (await git(workspacePath, ["rev-parse", `${baseSha}^{tree}`])).trim();
+		if (tree === baseTree) return undefined;
+		const commitSha = (
+			await git(workspacePath, ["commit-tree", tree, "-p", baseSha, "-m", message], {
+				GIT_AUTHOR_NAME: identity.name,
+				GIT_AUTHOR_EMAIL: identity.email,
+				GIT_COMMITTER_NAME: identity.name,
+				GIT_COMMITTER_EMAIL: identity.email,
+			})
+		).trim();
+		// The empty old value means "only if the ref does not exist".
+		await git(workspacePath, ["update-ref", `refs/heads/${branch}`, commitSha, ""]);
+		return commitSha;
+	} finally {
+		await rm(scratch, { recursive: true, force: true });
+	}
+}
+
+/**
+ * Bring `branch` from the worktree's repository into the checkout as a branch of
+ * the same name. The checkout's HEAD, index and files are not touched; a fetch
+ * into a branch that is checked out is refused by git itself.
+ */
+export async function fetchRunBranch(
+	localPath: string,
+	workspacePath: string,
+	branch: string,
+): Promise<void> {
+	const source = (
+		await git(workspacePath, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
+	).trim();
+	await git(localPath, [
+		"fetch",
+		"--quiet",
+		"--no-tags",
+		source,
+		`refs/heads/${branch}:refs/heads/${branch}`,
+	]);
+}
+
+/**
+ * Why the checkout's branch cannot be fast-forwarded to a run's commit, or
+ * undefined when it can. The commit's parent is the run's base, so the move is a
+ * fast-forward exactly when the branch tip is still that base; the branch must be
+ * the one checked out and the tree clean, because the files change with it.
+ */
+export async function fastForwardBlocker(
+	localPath: string,
+	baseRef: string,
+	baseSha: string,
+): Promise<string | undefined> {
+	let current: string;
+	try {
+		current = (await git(localPath, ["symbolic-ref", "--short", "-q", "HEAD"])).trim();
+	} catch {
+		return `the checkout is on a detached HEAD, not on ${baseRef}`;
+	}
+	if (current !== baseRef) {
+		return `the checkout is on "${current}", and the run started from "${baseRef}"`;
+	}
+	const tip = (await git(localPath, ["rev-parse", "HEAD"])).trim();
+	if (tip !== baseSha) {
+		return `${baseRef} has moved since the run started (it is at ${tip.slice(0, 7)}, the run started from ${baseSha.slice(0, 7)})`;
+	}
+	if ((await git(localPath, ["status", "--porcelain"])).trim() !== "") {
+		return "the checkout has uncommitted changes";
+	}
+	return undefined;
+}
+
+/** Fast-forward the checked-out branch to `commitSha`. Fails rather than merge. */
+export async function fastForwardCheckout(localPath: string, commitSha: string): Promise<void> {
+	await git(localPath, ["merge", "--ff-only", "--quiet", commitSha]);
+}
+
+/**
+ * How a run's changes were delivered. `reached` is how far they got:
+ *
+ *   mirror   committed, but the branch is only in Arnold's mirror (no checkout,
+ *            or the fetch failed); `note` says why
+ *   branch   the branch is in the checkout; the checkout's own branch is untouched
+ *   commit   the checkout's branch was fast-forwarded to the commit
+ *   nothing  no commit could be made; `note` says why, and the patch still stands
+ */
+export type ChangesDelivery = {
+	/** What the manifest asked for. */
+	mode: Exclude<OnChanges, "patch">;
+	reached: "nothing" | "mirror" | "branch" | "commit";
+	branch?: string;
+	commitSha?: string;
+	/** Why it stopped short of `mode`. */
+	note?: string;
+};
+
+function firstLineOf(caught: unknown): string {
+	return (String(caught).split("\n")[0] ?? "").replace(/^Error: /, "");
+}
+
+/**
+ * Deliver a run's changes as `mode` asks, falling back one level at a time and
+ * saying why: `commit` to `branch` when the checkout is not where the run
+ * started, `branch` to the mirror when there is no checkout to fetch into.
+ * Returns undefined when the run changed nothing.
+ *
+ * Never throws, for the same reason `capturePatch` does not.
+ */
+export async function deliverWorktreeChanges(input: {
+	mode: Exclude<OnChanges, "patch">;
+	workspacePath: string;
+	baseRef: string;
+	baseSha: string;
+	/** The repo's checkout, when it has one. */
+	localPath: string | undefined;
+	agentId: string;
+	runId: string;
+	identity: CommitIdentity;
+}): Promise<ChangesDelivery | undefined> {
+	const { mode, workspacePath, baseRef, baseSha, localPath, agentId, runId } = input;
+	const branch = runBranchName(agentId, runId);
+	let commitSha: string | undefined;
+	try {
+		commitSha = await commitWorktreeChanges({
+			workspacePath,
+			baseSha,
+			branch,
+			message: runCommitMessage({ agentId, runId, baseRef, baseSha }),
+			identity: input.identity,
+		});
+	} catch (caught: unknown) {
+		return { mode, reached: "nothing", note: `could not commit: ${firstLineOf(caught)}` };
+	}
+	if (commitSha === undefined) return undefined;
+	const committed = { mode, branch, commitSha };
+
+	if (localPath === undefined) {
+		return { ...committed, reached: "mirror", note: "this repo has no local checkout path" };
+	}
+	try {
+		await fetchRunBranch(localPath, workspacePath, branch);
+	} catch (caught: unknown) {
+		return {
+			...committed,
+			reached: "mirror",
+			note: `could not fetch into the checkout: ${firstLineOf(caught)}`,
+		};
+	}
+	if (mode === "branch") return { ...committed, reached: "branch" };
+
+	try {
+		const blocker = await fastForwardBlocker(localPath, baseRef, baseSha);
+		if (blocker !== undefined) {
+			return { ...committed, reached: "branch", note: `not fast-forwarded: ${blocker}` };
+		}
+		await fastForwardCheckout(localPath, commitSha);
+		return { ...committed, reached: "commit" };
+	} catch (caught: unknown) {
+		return {
+			...committed,
+			reached: "branch",
+			note: `not fast-forwarded: ${firstLineOf(caught)}`,
+		};
+	}
+}
+
+/**
+ * Deliver a run's changes and record the result on the Run row: the branch and
+ * commit in the Notary's own columns, the rest in `changesDelivery`. When the
+ * checkout was fast-forwarded the patch is marked applied, so the run page does
+ * not offer to apply it a second time.
+ */
+export async function deliverRunChanges(input: {
+	mode: Exclude<OnChanges, "patch">;
+	runId: string;
+	agentId: string;
+	workspacePath: string;
+	baseRef: string;
+	baseSha: string;
+	localPath: string | undefined;
+}): Promise<ChangesDelivery | undefined> {
+	try {
+		const delivery = await deliverWorktreeChanges({
+			...input,
+			identity: arnoldCommitIdentity(),
+		});
+		if (delivery === undefined) return undefined;
+		await prisma.run.update({
+			where: { id: input.runId },
+			data: {
+				changesDelivery: stringifyJsonColumn(delivery),
+				...(delivery.branch === undefined ? {} : { branch: delivery.branch }),
+				...(delivery.commitSha === undefined ? {} : { headSha: delivery.commitSha }),
+			},
+		});
+		if (delivery.reached === "commit") {
+			await prisma.artifact.updateMany({
+				where: { runId: input.runId, kind: PATCH_ARTIFACT_KIND, appliedAt: null },
+				data: { appliedAt: new Date() },
+			});
+		}
+		return delivery;
+	} catch (caught: unknown) {
+		console.warn(
+			`[arnold] could not deliver the changes of run ${input.runId}: ${String(caught)}`,
+		);
+		return undefined;
+	}
 }
 
 /** A path for a shell, single-quoted, so the command pastes from any directory. */
